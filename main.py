@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from contextlib import asynccontextmanager
 import asyncio
 import fitz
 import pytesseract
@@ -14,8 +15,6 @@ import os
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-app = FastAPI()
 
 # Configuration
 class Settings:
@@ -88,14 +87,21 @@ async def process_pdf(file_path: Path) -> dict:
             detail=f"Error processing PDF file: {str(e)}"
         )
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     # Initialize the file watcher
     event_handler = PDFHandler(app)
     observer = Observer()
     observer.schedule(event_handler, str(settings.INPUT_DIR), recursive=False)
     observer.start()
     logger.info("File watcher started for 'filein' directory")
+    yield
+    # Cleanup on shutdown
+    observer.stop()
+    observer.join()
+    logger.info("File watcher stopped")
+
+app = FastAPI(lifespan=lifespan)
 
 @app.post("/upload/")
 async def upload_pdf(file: UploadFile = File(...)):
