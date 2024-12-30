@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import uuid
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
@@ -81,7 +82,7 @@ class PDFHandler(FileSystemEventHandler):
                     target_dir = settings.PROCESSED_DIR
                 
                 target_path = target_dir / Path(file_path).name
-                Path(file_path).rename(target_path)
+                shutil.move(str(file_path), str(target_path))
                 
                 self.processing_status[filename].update({
                     "file_moved": True,
