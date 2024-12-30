@@ -4,6 +4,8 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from contextlib import asynccontextmanager
+from datetime import datetime
+from enum import Enum
 import asyncio
 import fitz
 import pytesseract
@@ -15,6 +17,12 @@ import os
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class ProcessingStatus(Enum):
+    DETECTED = "detected"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 # Configuration
 class Settings:
@@ -28,15 +36,39 @@ class Settings:
 class PDFHandler(FileSystemEventHandler):
     def __init__(self, app):
         self.app = app
+        self.processing_status = {}
         
     def on_created(self, event):
         if event.is_directory:
             return
         if event.src_path.endswith('.pdf'):
             filename = Path(event.src_path).name
-            logger.info(f"New PDF detected: {filename}")
-            # Create task to process the file
-            asyncio.create_task(process_pdf(Path(event.src_path)))
+            self.processing_status[filename] = {
+                "status": ProcessingStatus.DETECTED,
+                "timestamp": datetime.now(),
+                "path": event.src_path
+            }
+            logger.info(f"New PDF detected: {filename} - Status: {ProcessingStatus.DETECTED}")
+            asyncio.create_task(self._process_and_track(Path(event.src_path)))
+            
+    async def _process_and_track(self, file_path: Path):
+        filename = file_path.name
+        try:
+            self.processing_status[filename]["status"] = ProcessingStatus.PROCESSING
+            result = await process_pdf(file_path)
+            self.processing_status[filename].update({
+                "status": ProcessingStatus.COMPLETED,
+                "result": result,
+                "completed_at": datetime.now()
+            })
+            logger.info(f"Completed processing {filename} - Method: {result['source']}")
+        except Exception as e:
+            self.processing_status[filename].update({
+                "status": ProcessingStatus.FAILED,
+                "error": str(e),
+                "failed_at": datetime.now()
+            })
+            logger.error(f"Failed processing {filename}: {str(e)}")
 
 settings = Settings()
 settings.UPLOAD_DIR.mkdir(exist_ok=True)
@@ -91,6 +123,7 @@ async def process_pdf(file_path: Path) -> dict:
 async def lifespan(app: FastAPI):
     # Initialize the file watcher
     event_handler = PDFHandler(app)
+    app.state.event_handler = event_handler  # Store reference for access
     observer = Observer()
     observer.schedule(event_handler, str(settings.INPUT_DIR), recursive=False)
     observer.start()
@@ -155,6 +188,14 @@ async def process_existing_file(filename: str):
             status_code=500,
             detail=str(e)
         )
+
+@app.get("/processing-status/{filename}")
+async def get_processing_status(filename: str):
+    """Get processing status for a specific file."""
+    event_handler = app.state.event_handler
+    if filename not in event_handler.processing_status:
+        raise HTTPException(status_code=404, detail="File not found in processing history")
+    return event_handler.processing_status[filename]
 
 @app.get("/list-files/")
 async def list_input_files():
