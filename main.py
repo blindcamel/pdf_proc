@@ -32,6 +32,8 @@ class Settings:
     """Application configuration settings"""
     UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
     INPUT_DIR = Path("filein")    # Directory to watch for new files
+    PROCESSED_DIR = Path("processed")  # Base processed directory
+    PROCESSED_OCR_DIR = Path("processed/OCR")  # OCR-specific directory
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
 
@@ -68,7 +70,40 @@ class PDFHandler(FileSystemEventHandler):
                 "completed_at": datetime.now()
             })
             logger.info(f"Completed processing {filename} - Method: {result['source']}")
-            # logger.info(f"Extracted text from {filename}:\n{result['text']}")   #print entire output 
+            # logger.info(f"Extracted text from {filename}:\n{result['text']}")   #print entire output
+
+            try:
+                if result['source'] == 'ocr':
+                    settings.PROCESSED_OCR_DIR.mkdir(parents=True, exist_ok=True)
+                    target_dir = settings.PROCESSED_OCR_DIR
+                else:
+                    settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+                    target_dir = settings.PROCESSED_DIR
+                
+                target_path = target_dir / Path(file_path).name
+                Path(file_path).rename(target_path)
+                
+                self.processing_status[filename].update({
+                    "file_moved": True,
+                    "final_location": str(target_path)
+                })
+                logger.info(f"Moved {filename} to {target_path}")
+                
+            except PermissionError as e:
+                logger.error(f"Permission error moving {filename}: {str(e)}")
+                self.processing_status[filename].update({
+                    "file_moved": False,
+                    "move_error": "Permission denied"
+                })
+            except OSError as e:
+                logger.error(f"OS error moving {filename}: {str(e)}")
+                self.processing_status[filename].update({
+                    "file_moved": False,
+                    "move_error": str(e)
+                })
+
+
+
         except Exception as e:
             self.processing_status[filename].update({
                 "status": ProcessingStatus.FAILED,
