@@ -68,7 +68,7 @@ class PDFHandler(FileSystemEventHandler):
                 "completed_at": datetime.now()
             })
             logger.info(f"Completed processing {filename} - Method: {result['source']}")
-            logger.info(f"Extracted text from {filename}:\n{result['text']}")
+            # logger.info(f"Extracted text from {filename}:\n{result['text']}")   #print entire output 
         except Exception as e:
             self.processing_status[filename].update({
                 "status": ProcessingStatus.FAILED,
@@ -112,9 +112,16 @@ async def process_pdf(file_path: Path) -> dict:
         text = ""
         for page in doc:
             pix = page.get_pixmap()
+            print(f"Pixmap dims: {pix.width}x{pix.height}, samples per pixel: {pix.n}")  # Debug
+
             img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
                 pix.height, pix.width, pix.n)
+            
+            print(f"Numpy array shape: {img.shape}")  # Debug
+
             text += pytesseract.image_to_string(img) + "\n"
+            print(f"OCR output length: {len(text)}")  # Debug
+
         
         doc.close()
         return {
