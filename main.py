@@ -1,57 +1,63 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
-from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+# Standard library imports
+import asyncio
+import logging
+import os
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
-import asyncio
-import fitz
-import pytesseract
+from pathlib import Path
+
+# Third-party imports
+import fitz  # PyMuPDF
 import numpy as np
-import uuid
-import logging
-import os
+import pytesseract
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class ProcessingStatus(Enum):
+    """Enum for tracking PDF processing status"""
     DETECTED = "detected"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
 
-# Configuration
 class Settings:
-    # Directory for uploaded files through API
-    UPLOAD_DIR = Path("uploads")
-    # Directory to watch for files to process
-    INPUT_DIR = Path("filein")
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    """Application configuration settings"""
+    UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
+    INPUT_DIR = Path("filein")    # Directory to watch for new files
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
 
 class PDFHandler(FileSystemEventHandler):
+    """Handles file system events for PDF processing"""
     def __init__(self, app):
         self.app = app
         self.processing_status = {}
+        self.queue = asyncio.Queue()
         
     def on_created(self, event):
-        if event.is_directory:
+        """Triggered when a new file is created in the watched directory"""
+        if event.is_directory or not event.src_path.endswith('.pdf'):
             return
-        if event.src_path.endswith('.pdf'):
-            filename = Path(event.src_path).name
-            self.processing_status[filename] = {
-                "status": ProcessingStatus.DETECTED,
-                "timestamp": datetime.now(),
-                "path": event.src_path
-            }
-            logger.info(f"New PDF detected: {filename} - Status: {ProcessingStatus.DETECTED}")
-            asyncio.create_task(self._process_and_track(Path(event.src_path)))
+            
+        filename = Path(event.src_path).name
+        self.processing_status[filename] = {
+            "status": ProcessingStatus.DETECTED,
+            "timestamp": datetime.now(),
+            "path": event.src_path
+        }
+        logger.info(f"New PDF detected: {filename} - Status: {ProcessingStatus.DETECTED}")
+        asyncio.run_coroutine_threadsafe(self.queue.put(event.src_path), self.app.state.loop)
             
     async def _process_and_track(self, file_path: Path):
+        """Process PDF and track its status"""
         filename = file_path.name
         try:
             self.processing_status[filename]["status"] = ProcessingStatus.PROCESSING
@@ -62,6 +68,7 @@ class PDFHandler(FileSystemEventHandler):
                 "completed_at": datetime.now()
             })
             logger.info(f"Completed processing {filename} - Method: {result['source']}")
+            logger.info(f"Extracted text from {filename}:\n{result['text']}")
         except Exception as e:
             self.processing_status[filename].update({
                 "status": ProcessingStatus.FAILED,
@@ -70,18 +77,22 @@ class PDFHandler(FileSystemEventHandler):
             })
             logger.error(f"Failed processing {filename}: {str(e)}")
 
+# Initialize settings
 settings = Settings()
 settings.UPLOAD_DIR.mkdir(exist_ok=True)
 settings.INPUT_DIR.mkdir(exist_ok=True)
 
 async def process_pdf(file_path: Path) -> dict:
-    """Process PDF file and extract text using OCR if necessary."""
+    """
+    Process PDF file and extract text using OCR if necessary.
+    Returns a dictionary containing extracted text and metadata.
+    """
     logger.info(f"Processing file: {file_path}")
     try:
         doc = fitz.open(str(file_path))
         page_count = len(doc)
         
-        # Try normal text extraction first
+        # Try direct text extraction first
         text = ""
         for page in doc:
             page_text = page.get_text()
@@ -96,7 +107,7 @@ async def process_pdf(file_path: Path) -> dict:
                 "page_count": page_count
             }
         
-        # If no text found, use OCR
+        # Fall back to OCR if no text found
         logger.info(f"No text found in PDF {file_path}, falling back to OCR")
         text = ""
         for page in doc:
@@ -121,36 +132,51 @@ async def process_pdf(file_path: Path) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize the file watcher
+    """Application lifespan manager for startup and shutdown tasks"""
+    # Store the event loop
+    app.state.loop = asyncio.get_running_loop()
+
+    # Initialize file watcher
     event_handler = PDFHandler(app)
-    app.state.event_handler = event_handler  # Store reference for access
+    app.state.event_handler = event_handler
+
+    async def process_queue():
+        """Background task to process PDFs from queue"""
+        while True:
+            file_path = await event_handler.queue.get()
+            await event_handler._process_and_track(Path(file_path))
+            event_handler.queue.task_done()
+    
+    process_task = asyncio.create_task(process_queue())
+    app.state.process_task = process_task
+
+    # Start file system observer
     observer = Observer()
     observer.schedule(event_handler, str(settings.INPUT_DIR), recursive=False)
     observer.start()
     logger.info("File watcher started for 'filein' directory")
     yield
+
     # Cleanup on shutdown
     observer.stop()
     observer.join()
     logger.info("File watcher stopped")
 
+# Initialize FastAPI application
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/upload/")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Handle PDF upload through API endpoint."""
+    """Handle PDF upload through API endpoint"""
     file_path = None
     try:
-        # Generate unique filename
         file_path = settings.UPLOAD_DIR / f"{uuid.uuid4()}.pdf"
         logger.info(f"Saving uploaded file to: {file_path}")
         
-        # Save uploaded file
         with open(file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
         
-        # Process the PDF
         return await process_pdf(file_path)
     
     except Exception as e:
@@ -160,7 +186,6 @@ async def upload_pdf(file: UploadFile = File(...)):
             detail=str(e)
         )
     finally:
-        # Cleanup
         if file_path and file_path.exists():
             try:
                 file_path.unlink()
@@ -170,7 +195,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @app.post("/process-file/")
 async def process_existing_file(filename: str):
-    """Process a file that already exists in the input directory."""
+    """Process a file that already exists in the input directory"""
     file_path = settings.INPUT_DIR / filename
     logger.info(f"Request to process existing file: {file_path}")
     
@@ -191,7 +216,7 @@ async def process_existing_file(filename: str):
 
 @app.get("/processing-status/{filename}")
 async def get_processing_status(filename: str):
-    """Get processing status for a specific file."""
+    """Get processing status for a specific file"""
     event_handler = app.state.event_handler
     if filename not in event_handler.processing_status:
         raise HTTPException(status_code=404, detail="File not found in processing history")
@@ -199,7 +224,7 @@ async def get_processing_status(filename: str):
 
 @app.get("/list-files/")
 async def list_input_files():
-    """List all files in the input directory."""
+    """List all PDF files in the input directory"""
     try:
         files = [f for f in os.listdir(settings.INPUT_DIR) if f.endswith('.pdf')]
         return {"files": files}
@@ -212,6 +237,7 @@ async def list_input_files():
 
 @app.get("/")
 async def root():
+    """Root endpoint providing API information"""
     return {
         "message": "PDF Processing API",
         "endpoints": {
