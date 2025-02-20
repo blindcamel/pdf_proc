@@ -79,7 +79,30 @@ class PDFHandler(FileSystemEventHandler):
                 "completed_at": datetime.now()
             })
             logger.info(f"Completed processing {filename} - Method: {result['source']}")
-            # logger.info(f"Extracted text from {filename}:\n{result['text']}")   #print entire output
+            # logger.info(f"Extracted text from {filename}:\n{result['text']}")   #prints entire output
+
+            # Extract invoice data
+            extracted_data = await self.invoice_extractor.extract_data(result['text'])
+            if extracted_data:
+                new_path = await self.pdf_renamer.rename_file(file_path, extracted_data)
+                if new_path:
+                    file_path = new_path  # Update path for file movement
+                    filename = new_path.name  # Update filename for status tracking
+                    self.processing_status[filename].update({
+                        "extracted_data": extracted_data,
+                        "renamed": True
+                    })
+                    logger.info(f"Renamed file to: {filename}")
+                else:
+                    logger.warning(f"Failed to rename {filename}")
+                    self.processing_status[filename].update({
+                        "rename_failed": True
+                    })
+            else:
+                logger.warning(f"Failed to extract data from {filename}")
+                self.processing_status[filename].update({
+                    "extraction_failed": True
+                })
 
             try:
                 if result['source'] == 'ocr':
