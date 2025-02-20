@@ -15,3 +15,8 @@ curl -X POST "http://localhost:8000/upload/" \
      -H "accept: application/json" \
      -H "Content-Type: multipart/form-data" \
      -F "file=@./filein/aaa.pdf"
+
+curl -X GET "http://localhost:8000/list-files/" \
+     -H "accept: application/json" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@./filein/aaa.pdf"
