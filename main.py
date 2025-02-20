@@ -18,6 +18,11 @@ from fastapi.responses import JSONResponse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+#Local imports
+from openai import OpenAI
+from invoice_data_extractor import InvoiceDataExtractor
+from pdf_renamer import PDFRenamer
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,6 +42,7 @@ class Settings:
     PROCESSED_OCR_DIR = Path("processed/OCR")  # OCR-specific directory
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
+    OPENAI_API_KEY = "openaikey"
 
 class PDFHandler(FileSystemEventHandler):
     """Handles file system events for PDF processing"""
@@ -44,6 +50,8 @@ class PDFHandler(FileSystemEventHandler):
         self.app = app
         self.processing_status = {}
         self.queue = asyncio.Queue()
+        self.invoice_extractor = InvoiceDataExtractor(settings.OPENAI_API_KEY)
+        self.pdf_renamer = PDFRenamer()
         
     def on_created(self, event):
         """Triggered when a new file is created in the watched directory"""
