@@ -14,12 +14,10 @@ import fitz  # PyMuPDF
 import numpy as np
 import pytesseract
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 #Local imports
-from openai import OpenAI
 from invoice_data_extractor import InvoiceDataExtractor
 from pdf_renamer import PDFRenamer
 

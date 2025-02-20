@@ -2,7 +2,6 @@ import json
 import logging
 from typing import List, Optional
 from openai import OpenAI
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
