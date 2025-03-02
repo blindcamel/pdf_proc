@@ -40,9 +40,7 @@ class ProcessingStatus(Enum):
 class Settings:
     """Application configuration settings"""
 
-    BASE_DIR = Path(
-        __file__
-    ).parent.absolute()  # Get the directory where script is running
+    BASE_DIR = Path(__file__).parent.absolute()  # Get the directory where script is running
 
     # UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
     UPLOAD_DIR = BASE_DIR / "uploads"  # Directory for API uploaded files
@@ -558,7 +556,7 @@ async def root():
             "POST /process-file": "Process an existing file from the input directory",
             "POST /process-all": "Process all files in /uploads",
             "GET /list-files": "List all PDF files in the input directory",
-            "GET /debud-paths": "debug paths",
+            "GET /debug-paths": "debug paths",
             "GET /": "This information",
         },
     }
