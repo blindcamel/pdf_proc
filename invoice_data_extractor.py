@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 from typing import List, Optional
+from dotenv import load_dotenv
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -8,9 +10,20 @@ logger = logging.getLogger(__name__)
 class InvoiceDataExtractor:
     """Handles extraction of invoice data using OpenAI API"""
     
-    def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key)
+    # def __init__(self, api_key: str):
+    #     self.client = OpenAI(api_key=api_key)
+
+    def __init__(self, api_key=None):
+        # Load environment variables from .env file
+        load_dotenv()
         
+        # Get API key from environment variables
+        api_key = api_key or os.getenv("OPENAI_API_KEY")
+        
+        # Initialize the client with the API key
+        self.client = OpenAI(api_key=api_key)
+
+
     def _create_prompt(self, text: str) -> str:
         return f"""
         Extract the following details from this invoice text:

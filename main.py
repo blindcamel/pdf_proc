@@ -6,6 +6,7 @@ import uuid
 import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
+from dotenv import load_dotenv
 from enum import Enum
 from pathlib import Path
 
@@ -54,7 +55,9 @@ class Settings:
     
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
-    OPENAI_API_KEY = "openaikey"
+    
+    load_dotenv()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
 class PDFHandler(FileSystemEventHandler):
