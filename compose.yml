@@ -12,4 +12,4 @@ services:
       - PYTHONUNBUFFERED=1
       - MAX_FILE_SIZE=10485760  # 10MB in bytes
     working_dir: /pdf_proc
-    command: bash -c "apt-get update && apt-get install -y tesseract-ocr poppler-utils mupdf && pip install fastapi uvicorn python-multipart PyMuPDF pytesseract numpy pydantic python-magic watchdog && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    command: bash -c "apt-get update && apt-get install -y tesseract-ocr poppler-utils mupdf && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
