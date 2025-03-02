@@ -365,7 +365,9 @@ async def root():
         "endpoints": {
             "POST /upload": "Upload and process a new PDF file",
             "POST /process-file": "Process an existing file from the input directory",
+            "POST /process-all": "Process all files in /uploads",
             "GET /list-files": "List all PDF files in the input directory",
+            "GET /debud-paths": "debug paths",
             "GET /": "This information",
         },
     }
