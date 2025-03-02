@@ -38,10 +38,20 @@ class ProcessingStatus(Enum):
 class Settings:
     """Application configuration settings"""
 
-    UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
-    INPUT_DIR = Path("filein")  # Directory to watch for new files
-    PROCESSED_DIR = Path("processed")  # Base processed directory
-    PROCESSED_OCR_DIR = Path("processed/OCR")  # OCR-specific directory
+    BASE_DIR = Path(
+        __file__
+    ).parent.absolute()  # Get the directory where script is running
+
+    # UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
+    UPLOAD_DIR = BASE_DIR / "uploads"  # Directory for API uploaded files
+
+    # INPUT_DIR = Path("filein")  # Directory to watch for new files
+    # PROCESSED_DIR = Path("processed")  # Base processed directory
+    # PROCESSED_OCR_DIR = Path("processed/OCR")  # OCR-specific directory
+    INPUT_DIR = BASE_DIR / "filein"  # Directory to watch for new files
+    PROCESSED_DIR = BASE_DIR / "processed"  # Base processed directory
+    PROCESSED_OCR_DIR = BASE_DIR / "processed/OCR"  # OCR-specific directory
+    
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
     OPENAI_API_KEY = "openaikey"
@@ -326,6 +336,21 @@ async def process_all_files():
     return {
         "message": f"Queued {len(input_files)} files for processing",
         "files": [f.name for f in input_files],
+    }
+
+
+@app.get("/debug-paths/")
+async def debug_paths():
+    """Debug endpoint to show directory paths"""
+    return {
+        "base_dir": str(settings.BASE_DIR),
+        "input_dir": str(settings.INPUT_DIR),
+        "input_dir_exists": settings.INPUT_DIR.exists(),
+        "input_dir_is_dir": settings.INPUT_DIR.is_dir(),
+        "files_in_input_dir": [
+            f.name for f in settings.INPUT_DIR.glob("*") if f.is_file()
+        ],
+        "pdf_files_in_input_dir": [f.name for f in settings.INPUT_DIR.glob("*.pdf")],
     }
 
 
