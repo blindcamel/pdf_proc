@@ -307,6 +307,31 @@ async def list_input_files():
             detail=str(e)
         )
 
+@app.post("/process-all/")
+async def process_all_files():
+    """Process all PDF files currently in the input directory"""
+    event_handler = app.state.event_handler
+    input_files = [f for f in settings.INPUT_DIR.glob('*.pdf')]
+    
+    if not input_files:
+        return {"message": "No PDF files found in input directory"}
+    
+    # Queue all files for processing
+    for file_path in input_files:
+        if file_path.name not in event_handler.processing_status:
+            event_handler.processing_status[file_path.name] = {
+                "status": ProcessingStatus.DETECTED,
+                "timestamp": datetime.now(),
+                "path": str(file_path)
+            }
+            await event_handler.queue.put(str(file_path))
+            logger.info(f"Queued {file_path.name} for processing")
+    
+    return {
+        "message": f"Queued {len(input_files)} files for processing",
+        "files": [f.name for f in input_files]
+    }
+
 @app.get("/")
 async def root():
     """Root endpoint providing API information"""
