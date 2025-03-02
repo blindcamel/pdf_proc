@@ -47,7 +47,7 @@ class InvoiceDataExtractor:
         """
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Use chat-based model
+                model="gpt-4-turbo",  # Use chat-based model
                 messages=[{"role": "user", "content": self._create_prompt(text)}],
                 max_tokens=100,
                 temperature=0,
