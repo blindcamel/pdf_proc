@@ -7,7 +7,6 @@ import shutil
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
-from dotenv import load_dotenv
 from enum import Enum
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from pathlib import Path
 import fitz  # PyMuPDF
 import numpy as np
 import pytesseract
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
