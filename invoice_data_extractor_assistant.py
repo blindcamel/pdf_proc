@@ -65,6 +65,7 @@ class InvoiceDataExtractor:
 
                 # Safely evaluate the string as a Python list
                 data = ast.literal_eval(cleaned_result)
+                print(data)
 
                 # Validate expected structure
                 if not isinstance(data, list) or len(data) != 3:
