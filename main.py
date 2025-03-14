@@ -41,7 +41,9 @@ class ProcessingStatus(Enum):
 class Settings:
     """Application configuration settings"""
 
-    BASE_DIR = Path(__file__).parent.absolute()  # Get the directory where script is running
+    BASE_DIR = Path(
+        __file__
+    ).parent.absolute()  # Get the directory where script is running
 
     # UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
     UPLOAD_DIR = BASE_DIR / "uploads"  # Directory for API uploaded files
@@ -52,10 +54,10 @@ class Settings:
     INPUT_DIR = BASE_DIR / "filein"  # Directory to watch for new files
     PROCESSED_DIR = BASE_DIR / "processed"  # Base processed directory
     PROCESSED_OCR_DIR = BASE_DIR / "processed/OCR"  # OCR-specific directory
-    
+
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
-    
+
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -69,6 +71,7 @@ class PDFHandler(FileSystemEventHandler):
         self.queue = asyncio.Queue()
         self.invoice_extractor = InvoiceDataExtractor(settings.OPENAI_API_KEY)
         self.pdf_renamer = PDFRenamer()
+        self.pdf_splitter = PDFSplitter()
         # Flag to track if the process_queue task is running
         self.is_running = False
 
@@ -79,7 +82,7 @@ class PDFHandler(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
         filename = file_path.name
-        
+
         # Only add to queue if not already being processed
         if filename not in self.processing_status:
             self.processing_status[filename] = {
@@ -87,10 +90,12 @@ class PDFHandler(FileSystemEventHandler):
                 "timestamp": datetime.now(),
                 "path": str(file_path),
             }
-            logger.info(f"New PDF detected: {filename} - Status: {ProcessingStatus.DETECTED}")
-            
+            logger.info(
+                f"New PDF detected: {filename} - Status: {ProcessingStatus.DETECTED}"
+            )
+
             # Use the event loop to add the file to the queue
-            if hasattr(self.app.state, 'loop'):
+            if hasattr(self.app.state, "loop"):
                 asyncio.run_coroutine_threadsafe(
                     self.queue.put(str(file_path)), self.app.state.loop
                 )
@@ -114,14 +119,14 @@ class PDFHandler(FileSystemEventHandler):
                 # Get the next file path from the queue
                 file_path = await self.queue.get()
                 logger.info(f"Processing next file from queue: {file_path}")
-                
+
                 try:
                     # Process the file
                     await self._process_and_track(Path(file_path))
                 except Exception as e:
                     # Catch any exceptions to prevent the loop from breaking
                     logger.error(f"Error in process_queue for {file_path}: {str(e)}")
-                
+
                 # Mark the task as done
                 self.queue.task_done()
                 logger.info(f"Completed processing file: {file_path}")
@@ -137,9 +142,9 @@ class PDFHandler(FileSystemEventHandler):
         file_path = Path(file_path)  # Ensure file_path is a Path object
         filename = file_path.name
         original_filename = filename  # Keep track of the original filename
-        
+
         logger.info(f"Starting to process file: {filename}")
-        
+
         try:
             # Update status to processing
             if filename in self.processing_status:
@@ -153,39 +158,49 @@ class PDFHandler(FileSystemEventHandler):
                     "path": str(file_path),
                 }
                 logger.info(f"Created new status entry for {filename} as PROCESSING")
-            
+
             # Process the PDF
             result = await process_pdf(file_path)
             logger.info(f"PDF processing result for {filename}: {result['source']}")
-            
+
             # Extract and rename if data available
             renamed = False
             new_filename = filename
-            
+
             if result.get("text"):
-                extracted_data = await self.invoice_extractor.extract_data(result["text"])
-                
+                extracted_data = await self.invoice_extractor.extract_data(
+                    result["text"]
+                )
+
                 if extracted_data:
                     logger.info(f"Extracted data from {filename}: {extracted_data}")
-                    new_path = await self.pdf_renamer.rename_file(file_path, extracted_data)
-                    
+                    new_path = await self.pdf_renamer.rename_file(
+                        file_path, extracted_data
+                    )
+
                     if new_path:
                         # Update the file path and filename after renaming
                         renamed = True
                         file_path = new_path
                         new_filename = new_path.name
-                        
+
                         # Create an entry for the new filename if it doesn't exist
                         if new_filename not in self.processing_status:
-                            self.processing_status[new_filename] = self.processing_status[filename].copy()
-                        
+                            self.processing_status[new_filename] = (
+                                self.processing_status[filename].copy()
+                            )
+
                         # Update the entry with extraction and rename info
-                        self.processing_status[new_filename].update({
-                            "extracted_data": extracted_data,
-                            "renamed": True,
-                            "original_filename": original_filename,
-                            "path": str(file_path)  # Update the path to the new location
-                        })
+                        self.processing_status[new_filename].update(
+                            {
+                                "extracted_data": extracted_data,
+                                "renamed": True,
+                                "original_filename": original_filename,
+                                "path": str(
+                                    file_path
+                                ),  # Update the path to the new location
+                            }
+                        )
                         logger.info(f"Renamed file from {filename} to {new_filename}")
                     else:
                         logger.warning(f"Failed to rename {filename}")
@@ -193,18 +208,20 @@ class PDFHandler(FileSystemEventHandler):
                 else:
                     logger.warning(f"Failed to extract data from {filename}")
                     self.processing_status[filename].update({"extraction_failed": True})
-            
+
             # Determine which status entry to update
             status_key = new_filename if renamed else filename
-            
+
             # Update status to completed with results
-            self.processing_status[status_key].update({
-                "status": ProcessingStatus.COMPLETED,
-                "result": result,
-                "completed_at": datetime.now(),
-            })
+            self.processing_status[status_key].update(
+                {
+                    "status": ProcessingStatus.COMPLETED,
+                    "result": result,
+                    "completed_at": datetime.now(),
+                }
+            )
             logger.info(f"Updated status of {status_key} to COMPLETED")
-            
+
             # Move the file to the appropriate processed directory
             try:
                 if result["source"] == "ocr":
@@ -213,52 +230,50 @@ class PDFHandler(FileSystemEventHandler):
                 else:
                     settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
                     target_dir = settings.PROCESSED_DIR
-                
+
                 # Ensure file still exists before moving
                 if file_path.exists():
                     target_path = target_dir / file_path.name
                     logger.info(f"Moving {file_path} to {target_path}")
                     shutil.move(str(file_path), str(target_path))
-                    
-                    self.processing_status[status_key].update({
-                        "file_moved": True,
-                        "final_location": str(target_path)
-                    })
+
+                    self.processing_status[status_key].update(
+                        {"file_moved": True, "final_location": str(target_path)}
+                    )
                     logger.info(f"Successfully moved {file_path.name} to {target_path}")
                 else:
                     logger.error(f"File {file_path} does not exist, cannot move")
-                    self.processing_status[status_key].update({
-                        "file_moved": False,
-                        "move_error": "File does not exist"
-                    })
+                    self.processing_status[status_key].update(
+                        {"file_moved": False, "move_error": "File does not exist"}
+                    )
             except PermissionError as e:
                 logger.error(f"Permission error moving {file_path.name}: {str(e)}")
-                self.processing_status[status_key].update({
-                    "file_moved": False,
-                    "move_error": f"Permission denied: {str(e)}"
-                })
+                self.processing_status[status_key].update(
+                    {"file_moved": False, "move_error": f"Permission denied: {str(e)}"}
+                )
             except OSError as e:
                 logger.error(f"OS error moving {file_path.name}: {str(e)}")
-                self.processing_status[status_key].update({
-                    "file_moved": False,
-                    "move_error": str(e)
-                })
-        
+                self.processing_status[status_key].update(
+                    {"file_moved": False, "move_error": str(e)}
+                )
+
         except Exception as e:
             # Handle any exceptions during processing
             error_msg = str(e)
             logger.error(f"Error processing {filename}: {error_msg}")
             traceback_info = traceback.format_exc()
             logger.error(f"Traceback: {traceback_info}")
-            
+
             # Update the status to failed
             if filename in self.processing_status:
-                self.processing_status[filename].update({
-                    "status": ProcessingStatus.FAILED,
-                    "error": error_msg,
-                    "traceback": traceback_info,
-                    "failed_at": datetime.now(),
-                })
+                self.processing_status[filename].update(
+                    {
+                        "status": ProcessingStatus.FAILED,
+                        "error": error_msg,
+                        "traceback": traceback_info,
+                        "failed_at": datetime.now(),
+                    }
+                )
             else:
                 self.processing_status[filename] = {
                     "status": ProcessingStatus.FAILED,
@@ -268,19 +283,142 @@ class PDFHandler(FileSystemEventHandler):
                     "path": str(file_path),
                 }
 
+
+class PDFSplitter:
+    """Handles PDF document splitting based on page mapping data"""
+
+    def __init__(self, temp_dir=None):
+        """Initialize the PDF splitter
+
+        Args:
+            temp_dir: Directory to use for temporary files during processing
+        """
+        self.temp_dir = temp_dir or Path("temp_splits")
+        self.temp_dir.mkdir(exist_ok=True, parents=True)
+
+    async def split_document(self, file_path, page_mapping):
+        """Split a PDF document based on document_id groupings in page mapping
+
+        Args:
+            file_path: Path to the PDF file to split
+            page_mapping: Dictionary with (document_id, page_number) keys and metadata values
+
+        Returns:
+            List of paths to the split PDF files
+        """
+        logger.info(f"Splitting document: {file_path}")
+
+        # Group pages by document_id
+        document_groups = self._group_by_document_id(page_mapping)
+
+        # Create a list to store paths of split documents
+        split_paths = []
+
+        try:
+            # Open the source PDF
+            with fitz.open(str(file_path)) as doc:
+                # Process each document group
+                for doc_id, page_info in document_groups.items():
+                    # Sort pages by page_number
+                    sorted_pages = sorted(page_info, key=lambda x: x[0])
+
+                    # Get metadata from first page in group
+                    metadata = page_mapping[(doc_id, sorted_pages[0][0])]
+                    company, po_num, inv_num = metadata
+
+                    # Create output filename
+                    output_filename = f"{company}_PO{po_num}_INV{inv_num}.pdf"
+                    if len(document_groups) > 1:
+                        output_filename = (
+                            f"{company}_PO{po_num}_INV{inv_num}_doc{doc_id}.pdf"
+                        )
+
+                    output_path = self.temp_dir / output_filename
+
+                    # Create new PDF for this document group
+                    await self._create_pdf_subset(doc, sorted_pages, output_path)
+
+                    split_paths.append(output_path)
+                    logger.info(f"Created split document: {output_path}")
+
+        except Exception as e:
+            logger.error(f"Error splitting PDF {file_path}: {str(e)}")
+            raise
+
+        return split_paths
+
+    def _group_by_document_id(self, page_mapping):
+        """Group pages by document_id from the page mapping
+
+        Args:
+            page_mapping: Dictionary with (document_id, page_number) keys and metadata values
+
+        Returns:
+            Dictionary with document_id keys and lists of (page_number, metadata) values
+        """
+        document_groups = {}
+
+        for (doc_id, page_num), metadata in page_mapping.items():
+            if doc_id not in document_groups:
+                document_groups[doc_id] = []
+
+            document_groups[doc_id].append((page_num, metadata))
+
+        return document_groups
+
+    async def _create_pdf_subset(self, src_doc, pages, output_path):
+        """Create a new PDF with selected pages from the source document
+
+        Args:
+            src_doc: Source PyMuPDF document
+            pages: List of (page_number, metadata) tuples
+            output_path: Path where the new PDF should be saved
+        """
+        # Create a new PDF document
+        new_doc = fitz.open()
+
+        try:
+            # Add each page to the new document
+            for page_num, _ in pages:
+                # PyMuPDF pages are 0-indexed
+                new_doc.insert_pdf(
+                    src_doc, from_page=page_num - 1, to_page=page_num - 1
+                )
+
+            # Save the new document
+            new_doc.save(str(output_path))
+
+        finally:
+            # Clean up
+            new_doc.close()
+
+    async def cleanup(self):
+        """Remove temporary files and directories"""
+        import shutil
+
+        try:
+            if self.temp_dir.exists():
+                shutil.rmtree(self.temp_dir)
+                logger.info(f"Cleaned up temporary directory: {self.temp_dir}")
+        except Exception as e:
+            logger.error(f"Error cleaning up temporary directory: {str(e)}")
+
+
 async def _process_and_track(self, file_path: Path):
     """Process PDF and track its status"""
     file_path = Path(file_path)  # Ensure file_path is a Path object
     filename = file_path.name
-    original_filename = filename  # Keep track of the original filename for status updates
-    
+    original_filename = (
+        filename  # Keep track of the original filename for status updates
+    )
+
     try:
         # Update status to processing
         self.processing_status[filename]["status"] = ProcessingStatus.PROCESSING
-        
+
         # Process the PDF
         result = await process_pdf(file_path)
-        
+
         # Extract invoice data and rename if successful
         extracted_data = await self.invoice_extractor.extract_data(result["text"])
         if extracted_data:
@@ -289,16 +427,20 @@ async def _process_and_track(self, file_path: Path):
                 # Update the file path and filename after renaming
                 file_path = new_path
                 new_filename = new_path.name
-                
+
                 # Create a new entry for the renamed file and copy data from the old entry
-                self.processing_status[new_filename] = self.processing_status[filename].copy()
-                self.processing_status[new_filename].update({
-                    "extracted_data": extracted_data,
-                    "renamed": True,
-                    "original_filename": original_filename
-                })
+                self.processing_status[new_filename] = self.processing_status[
+                    filename
+                ].copy()
+                self.processing_status[new_filename].update(
+                    {
+                        "extracted_data": extracted_data,
+                        "renamed": True,
+                        "original_filename": original_filename,
+                    }
+                )
                 logger.info(f"Renamed file from {filename} to: {new_filename}")
-                
+
                 # Use the new filename for subsequent operations
                 filename = new_filename
             else:
@@ -307,15 +449,17 @@ async def _process_and_track(self, file_path: Path):
         else:
             logger.warning(f"Failed to extract data from {filename}")
             self.processing_status[filename].update({"extraction_failed": True})
-        
+
         # Update status to completed with results
-        self.processing_status[filename].update({
-            "status": ProcessingStatus.COMPLETED,
-            "result": result,
-            "completed_at": datetime.now(),
-        })
+        self.processing_status[filename].update(
+            {
+                "status": ProcessingStatus.COMPLETED,
+                "result": result,
+                "completed_at": datetime.now(),
+            }
+        )
         logger.info(f"Completed processing {filename} - Method: {result['source']}")
-        
+
         # Move the file to the appropriate processed directory
         try:
             if result["source"] == "ocr":
@@ -328,31 +472,30 @@ async def _process_and_track(self, file_path: Path):
             target_path = target_dir / file_path.name
             shutil.move(str(file_path), str(target_path))
 
-            self.processing_status[filename].update({
-                "file_moved": True,
-                "final_location": str(target_path)
-            })
+            self.processing_status[filename].update(
+                {"file_moved": True, "final_location": str(target_path)}
+            )
             logger.info(f"Moved {filename} to {target_path}")
 
         except PermissionError as e:
             logger.error(f"Permission error moving {filename}: {str(e)}")
-            self.processing_status[filename].update({
-                "file_moved": False,
-                "move_error": "Permission denied"
-            })
+            self.processing_status[filename].update(
+                {"file_moved": False, "move_error": "Permission denied"}
+            )
         except OSError as e:
             logger.error(f"OS error moving {filename}: {str(e)}")
-            self.processing_status[filename].update({
-                "file_moved": False,
-                "move_error": str(e)
-            })
+            self.processing_status[filename].update(
+                {"file_moved": False, "move_error": str(e)}
+            )
 
     except Exception as e:
-        self.processing_status[filename].update({
-            "status": ProcessingStatus.FAILED,
-            "error": str(e),
-            "failed_at": datetime.now(),
-        })
+        self.processing_status[filename].update(
+            {
+                "status": ProcessingStatus.FAILED,
+                "error": str(e),
+                "failed_at": datetime.now(),
+            }
+        )
         logger.error(f"Failed processing {filename}: {str(e)}")
 
 
@@ -429,9 +572,9 @@ async def lifespan(app: FastAPI):
     observer.schedule(event_handler, str(settings.INPUT_DIR), recursive=False)
     observer.start()
     logger.info("File watcher started for 'filein' directory")
-    
+
     yield
-    
+
     # Cleanup on shutdown
     observer.stop()
     observer.join()
