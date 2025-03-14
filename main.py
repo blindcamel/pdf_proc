@@ -29,6 +29,40 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+'''
+Todo:
+Movement to Processed Directories:
+
+Each split file needs to be moved to the appropriate processed directory (OCR or non-OCR)
+You'd need a helper method to handle this consistently
+
+
+Cleanup of Original Files:
+
+After successful splitting, you may want to move the original file to an archive or delete it
+This prevents duplicate processing
+
+
+Error Recovery:
+
+What happens if splitting succeeds but subsequent processing of some split files fails?
+You might need cleanup and rollback mechanisms
+
+
+File Permissions:
+
+Ensure the split files inherit appropriate permissions
+Handle any permission errors during the move operations
+
+
+
+I'd recommend adding a dedicated method for handling split files, perhaps something like _handle_split_files() that gets called after the splitting operation completes.
+'''
+
+
+
+
+
 class ProcessingStatus(Enum):
     """Enum for tracking PDF processing status"""
 
@@ -408,95 +442,154 @@ async def _process_and_track(self, file_path: Path):
     """Process PDF and track its status"""
     file_path = Path(file_path)  # Ensure file_path is a Path object
     filename = file_path.name
-    original_filename = (
-        filename  # Keep track of the original filename for status updates
-    )
+    # original_filename = filename  
+
+    logger.info(f"Starting to process file: {filename}")
 
     try:
         # Update status to processing
-        self.processing_status[filename]["status"] = ProcessingStatus.PROCESSING
+        if filename in self.processing_status:
+            self.processing_status[filename]["status"] = ProcessingStatus.PROCESSING
+            logger.info(f"Updated status of {filename} to PROCESSING")
+        else:
+            # Create an entry if it doesn't exist
+            self.processing_status[filename] = {
+                "status": ProcessingStatus.PROCESSING,
+                "timestamp": datetime.now(),
+                "path": str(file_path),
+            }
+            logger.info(f"Created new status entry for {filename} as PROCESSING")
 
         # Process the PDF
         result = await process_pdf(file_path)
+        logger.info(f"PDF processing result for {filename}: {result['source']}")
 
-        # Extract invoice data and rename if successful
-        extracted_data = await self.invoice_extractor.extract_data(result["text"])
-        if extracted_data:
-            new_path = await self.pdf_renamer.rename_file(file_path, extracted_data)
-            if new_path:
-                # Update the file path and filename after renaming
-                file_path = new_path
-                new_filename = new_path.name
+        # Extract document information including page mapping
+        # extracted_data = None
+        page_mapping = None
+        if result.get("text"):
+            # extracted_data = await self.invoice_extractor.extract_data(result["text"])
 
-                # Create a new entry for the renamed file and copy data from the old entry
-                self.processing_status[new_filename] = self.processing_status[
-                    filename
-                ].copy()
-                self.processing_status[new_filename].update(
-                    {
-                        "extracted_data": extracted_data,
-                        "renamed": True,
-                        "original_filename": original_filename,
-                    }
+            # Here we would call a method to get page mapping data
+            page_mapping = await self.invoice_extractor.extract_page_mapping(
+                result["text"]
+            )
+
+            if page_mapping:
+                logger.info(
+                    f"Extracted page mapping from {filename} with {len(page_mapping)} pages"
                 )
-                logger.info(f"Renamed file from {filename} to: {new_filename}")
+                self.processing_status[filename].update({"page_mapping": page_mapping})
 
-                # Use the new filename for subsequent operations
-                filename = new_filename
+                # Split the document if needed
+                if len(set(doc_id for doc_id, _ in page_mapping.keys())) > 1:
+                    logger.info(
+                        f"Document {filename} contains multiple documents, splitting..."
+                    )
+
+                    # Split the document based on page mapping
+                    split_paths = await self.pdf_splitter.split_document(
+                        file_path, page_mapping
+                    )
+
+                    # Update the status with split information
+                    self.processing_status[filename].update(
+                        {
+                            "split": True,
+                            "split_count": len(split_paths),
+                            "split_paths": [str(p) for p in split_paths],
+                        }
+                    )
+
+                    # Process each split document
+                    for split_path in split_paths:
+                        split_filename = split_path.name
+
+                        # Create an entry for the split file
+                        self.processing_status[split_filename] = {
+                            "status": ProcessingStatus.PROCESSING,
+                            "timestamp": datetime.now(),
+                            "path": str(split_path),
+                            "parent_file": filename,
+                            "split_from": str(file_path),
+                        }
+
+                        # Extract document ID from filename
+                        doc_id = None
+                        for d_id in set(doc_id for doc_id, _ in page_mapping.keys()):
+                            if f"_doc{d_id}" in split_filename:
+                                doc_id = d_id
+                                break
+
+                        # Get specific metadata for this document
+                        if doc_id:
+                            # Find first page for this doc_id
+                            first_page = min(
+                                page_num
+                                for d_id, page_num in page_mapping.keys()
+                                if d_id == doc_id
+                            )
+                            doc_metadata = page_mapping.get((doc_id, first_page))
+
+                            if doc_metadata:
+                                # Move the split file to the appropriate processed directory
+                                await self._move_processed_file(
+                                    split_path, result["source"]
+                                )
+
+                                # Update status for this split file
+                                self.processing_status[split_filename].update(
+                                    {
+                                        "status": ProcessingStatus.COMPLETED,
+                                        "metadata": doc_metadata,
+                                        "completed_at": datetime.now(),
+                                    }
+                                )
+
+                    # Original file processing is completed
+                    self.processing_status[filename].update(
+                        {
+                            "status": ProcessingStatus.COMPLETED,
+                            "result": result,
+                            "completed_at": datetime.now(),
+                        }
+                    )
+
+                    return  # Early return since we've handled all split files
             else:
-                logger.warning(f"Failed to rename {filename}")
-                self.processing_status[filename].update({"rename_failed": True})
-        else:
-            logger.warning(f"Failed to extract data from {filename}")
-            self.processing_status[filename].update({"extraction_failed": True})
+                logger.warning(f"Failed to extract page mapping from {filename}")
+                self.processing_status[filename].update({"page_mapping_failed": True})
 
-        # Update status to completed with results
-        self.processing_status[filename].update(
-            {
-                "status": ProcessingStatus.COMPLETED,
-                "result": result,
-                "completed_at": datetime.now(),
-            }
-        )
-        logger.info(f"Completed processing {filename} - Method: {result['source']}")
+        # Continue with normal processing for single documents
+        # (Existing renaming code would go here)
 
-        # Move the file to the appropriate processed directory
-        try:
-            if result["source"] == "ocr":
-                settings.PROCESSED_OCR_DIR.mkdir(parents=True, exist_ok=True)
-                target_dir = settings.PROCESSED_OCR_DIR
-            else:
-                settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-                target_dir = settings.PROCESSED_DIR
-
-            target_path = target_dir / file_path.name
-            shutil.move(str(file_path), str(target_path))
-
-            self.processing_status[filename].update(
-                {"file_moved": True, "final_location": str(target_path)}
-            )
-            logger.info(f"Moved {filename} to {target_path}")
-
-        except PermissionError as e:
-            logger.error(f"Permission error moving {filename}: {str(e)}")
-            self.processing_status[filename].update(
-                {"file_moved": False, "move_error": "Permission denied"}
-            )
-        except OSError as e:
-            logger.error(f"OS error moving {filename}: {str(e)}")
-            self.processing_status[filename].update(
-                {"file_moved": False, "move_error": str(e)}
-            )
+        # Rest of your existing _process_and_track method...
 
     except Exception as e:
-        self.processing_status[filename].update(
-            {
+        # Handle any exceptions during processing
+        error_msg = str(e)
+        logger.error(f"Error processing {filename}: {error_msg}")
+        traceback_info = traceback.format_exc()
+        logger.error(f"Traceback: {traceback_info}")
+
+        # Update the status to failed
+        if filename in self.processing_status:
+            self.processing_status[filename].update(
+                {
+                    "status": ProcessingStatus.FAILED,
+                    "error": error_msg,
+                    "traceback": traceback_info,
+                    "failed_at": datetime.now(),
+                }
+            )
+        else:
+            self.processing_status[filename] = {
                 "status": ProcessingStatus.FAILED,
-                "error": str(e),
+                "error": error_msg,
+                "traceback": traceback_info,
                 "failed_at": datetime.now(),
+                "path": str(file_path),
             }
-        )
-        logger.error(f"Failed processing {filename}: {str(e)}")
 
 
 # Initialize settings
