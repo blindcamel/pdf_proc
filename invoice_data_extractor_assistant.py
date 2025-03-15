@@ -8,16 +8,21 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
+
 class InvoiceDataExtractor:
     """Handles extraction of invoice data using OpenAI Assistant API"""
 
-    def __init__(self, api_key: Optional[str] = None, assistant_id: Optional[str] = None):
+    def __init__(
+        self, api_key: Optional[str] = None, assistant_id: Optional[str] = None
+    ):
         # Load environment variables from .env file
         load_dotenv()
 
         # Get API key and Assistant ID from environment variables or argument
         api_key = api_key or os.getenv("OPENAI_API_KEY")
-        assistant_id = assistant_id or os.getenv("OPENAI_ASSISTANT_ID")  # Store your assistant ID
+        assistant_id = assistant_id or os.getenv(
+            "OPENAI_ASSISTANT_ID"
+        )  # Store your assistant ID
 
         if not api_key:
             raise ValueError("OpenAI API key is required")
@@ -37,7 +42,7 @@ class InvoiceDataExtractor:
             # Create and run a new thread with the assistant
             thread_run = await self.client.beta.threads.create_and_run(
                 assistant_id=self.assistant_id,
-                thread={"messages": [{"role": "user", "content": text}]}
+                thread={"messages": [{"role": "user", "content": text}]},
             )
 
             # Wait for the assistant's response
@@ -55,26 +60,42 @@ class InvoiceDataExtractor:
                 return None
 
             # Fetch messages from the thread
-            messages = await self.client.beta.threads.messages.list(thread_id=thread_run.thread_id)
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_run.thread_id
+            )
             response_text = messages.data[0].content[0].text.value.strip()
 
             # Validate and parse response
             try:
                 # Remove unnecessary formatting if present
-                cleaned_result = re.sub(r"^```(?:json|python)?\n|\n```$", "", response_text.strip())
+                cleaned_result = re.sub(
+                    r"^```(?:json|python)?\n|\n```$", "", response_text.strip()
+                )
 
-                # Safely evaluate the string as a Python list
-                data = ast.literal_eval(cleaned_result)
-                print(data)
+                # Safely evaluate the string as a Python object
+                data_obj = ast.literal_eval(cleaned_result)
 
-                # Validate expected structure
-                if not isinstance(data, list) or len(data) != 3:
-                    raise ValueError("Invalid response format: Expected a list with 3 items.")
+                # Check if it's a dictionary with tuple keys
+                if isinstance(data_obj, dict) and any(
+                    isinstance(k, tuple) for k in data_obj.keys()
+                ):
+                    # Get the first value, which should be our list
+                    for value in data_obj.values():
+                        if isinstance(value, list) and len(value) == 3:
+                            return value
+                    raise ValueError("No valid data list found in dictionary values")
 
-                return data
+                # Handle direct list format (original expectation)
+                elif isinstance(data_obj, list) and len(data_obj) == 3:
+                    return data_obj
 
-            except (SyntaxError, ValueError):
+                raise ValueError(
+                    "Invalid response format: Expected a list with 3 items or dict with list values."
+                )
+
+            except (SyntaxError, ValueError) as e:
                 logger.error(f"Failed to parse assistant response: {cleaned_result}")
+                logger.error(f"Parsing error: {str(e)}")
                 return None
 
         except Exception as e:
