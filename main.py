@@ -29,40 +29,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-'''
-Todo:
-Movement to Processed Directories:
-
-Each split file needs to be moved to the appropriate processed directory (OCR or non-OCR)
-You'd need a helper method to handle this consistently
-
-
-Cleanup of Original Files:
-
-After successful splitting, you may want to move the original file to an archive or delete it
-This prevents duplicate processing
-
-
-Error Recovery:
-
-What happens if splitting succeeds but subsequent processing of some split files fails?
-You might need cleanup and rollback mechanisms
-
-
-File Permissions:
-
-Ensure the split files inherit appropriate permissions
-Handle any permission errors during the move operations
-
-
-
-I'd recommend adding a dedicated method for handling split files, perhaps something like _handle_split_files() that gets called after the splitting operation completes.
-'''
-
-
-
-
-
 class ProcessingStatus(Enum):
     """Enum for tracking PDF processing status"""
 
@@ -88,6 +54,7 @@ class Settings:
     INPUT_DIR = BASE_DIR / "filein"  # Directory to watch for new files
     PROCESSED_DIR = BASE_DIR / "processed"  # Base processed directory
     PROCESSED_OCR_DIR = BASE_DIR / "processed/OCR"  # OCR-specific directory
+    PROCESSED_FAILED_DIR = BASE_DIR / "processed/failed"  # Directory for failed files
 
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
@@ -316,6 +283,48 @@ class PDFHandler(FileSystemEventHandler):
                     "failed_at": datetime.now(),
                     "path": str(file_path),
                 }
+                # Try to move the failed file to the failed directory
+            try:
+                # Create failed directory if it doesn't exist
+                settings.PROCESSED_FAILED_DIR.mkdir(parents=True, exist_ok=True)
+
+                # Ensure file still exists before moving
+                if file_path.exists():
+                    target_path = settings.PROCESSED_FAILED_DIR / file_path.name
+                    logger.info(f"Moving failed file {file_path} to {target_path}")
+                    shutil.move(str(file_path), str(target_path))
+
+                    # Update status with move information
+                    if filename in self.processing_status:
+                        self.processing_status[filename].update(
+                            {"file_moved": True, "final_location": str(target_path)}
+                        )
+                    logger.info(
+                        f"Successfully moved failed file {file_path.name} to {target_path}"
+                    )
+                else:
+                    logger.error(f"Failed file {file_path} does not exist, cannot move")
+                    if filename in self.processing_status:
+                        self.processing_status[filename].update(
+                            {"file_moved": False, "move_error": "File does not exist"}
+                        )
+            except PermissionError as e:
+                logger.error(
+                    f"Permission error moving failed file {file_path.name}: {str(e)}"
+                )
+                if filename in self.processing_status:
+                    self.processing_status[filename].update(
+                        {
+                            "file_moved": False,
+                            "move_error": f"Permission denied: {str(e)}",
+                        }
+                    )
+            except OSError as e:
+                logger.error(f"OS error moving failed file {file_path.name}: {str(e)}")
+                if filename in self.processing_status:
+                    self.processing_status[filename].update(
+                        {"file_moved": False, "move_error": str(e)}
+                    )
 
 
 class PDFSplitter:
@@ -442,7 +451,7 @@ async def _process_and_track(self, file_path: Path):
     """Process PDF and track its status"""
     file_path = Path(file_path)  # Ensure file_path is a Path object
     filename = file_path.name
-    # original_filename = filename  
+    # original_filename = filename
 
     logger.info(f"Starting to process file: {filename}")
 
