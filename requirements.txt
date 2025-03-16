@@ -2,6 +2,7 @@ fastapi>=0.115.6
 mupdf>=1.21.1.20230112.1504
 numpy>=2.2.1
 openai>=1.63.2
+opencv-python>=4.11.0
 poppler-utils>=0.1.0
 pydantic>=2.10.4
 pymupdf>=1.25.1
