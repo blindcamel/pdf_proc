@@ -1,13 +1,16 @@
 # Python-generated files
 __pycache__/
+.pytest*
 *.py[oc]
 build/
+docs/
 dist/
 wheels/
 *.egg-info
 .python-version
 .env
 uv.lock
+.vscode
 
 # Virtual environments
 .venv
