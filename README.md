@@ -17,11 +17,10 @@ example 1:
 example 2:
 
 {
-    (1, 1): ["CompanyA", "PO123abc", "INV456"],
-    (1, 2): ["CompanyA", "PO124def", "INV457"],
-    (2, 1): ["CompanyB", "PO789xyz", "INV012"],
-    (3, 1): ["CompanyC", "PO345mno", "INV678"]
+    (1, 1):["CompanyA", "456123abc", "INV456"],
+    (1, 2):["CompanyA", "456785swz", "INV457"]
 }
+
 
 **Keys**: Tuples `(document_id, page_number)`  
   - `document_id`: Groups pages belonging to the same document.  

@@ -729,10 +729,20 @@ async def process_existing_file(filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/processing-status/")
 @app.get("/processing-status/{filename}")
-async def get_processing_status(filename: str):
-    """Get processing status for a specific file"""
+async def get_processing_status(filename: str = None):
+    """Get processing status for a specific file or all files"""
     event_handler = app.state.event_handler
+    
+    # If no filename is provided, return all statuses
+    if filename is None:
+        return {
+            "total_files": len(event_handler.processing_status),
+            "statuses": event_handler.processing_status
+        }
+    
+    # If filename is provided, return status for that file
     if filename not in event_handler.processing_status:
         raise HTTPException(
             status_code=404, detail="File not found in processing history"
@@ -803,6 +813,8 @@ async def root():
             "POST /process-all": "Process all files in /uploads",
             "GET /list-files": "List all PDF files in the input directory",
             "GET /debug-paths": "debug paths",
+            "GET /processing-status": "List all",
+            "GET /processing-status/{filename}": "List one",
             "GET /": "This information",
         },
     }

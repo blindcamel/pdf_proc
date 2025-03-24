@@ -1,0 +1,15 @@
+@hostname = http://localhost:8000
+
+get {{hostname}}
+
+###
+
+get {{hostname}}/list-files
+
+###
+
+get {{hostname}}/processing-status
+
+###
+
+GET {{hostname}}/debug-paths
