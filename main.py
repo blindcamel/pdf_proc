@@ -750,6 +750,35 @@ async def get_processing_status(filename: str = None):
     return event_handler.processing_status[filename]
 
 
+@app.delete("/processing-status/")
+@app.delete("/processing-status/{filename}")
+async def clear_processing_status(filename: str = None):
+    """Clear processing status for a specific file or all files"""
+    event_handler = app.state.event_handler
+    
+    # If filename is provided, clear only that file's status
+    if filename is not None:
+        if filename not in event_handler.processing_status:
+            raise HTTPException(
+                status_code=404, detail="File not found in processing history"
+            )
+        
+        # Remove the status entry for this file
+        del event_handler.processing_status[filename]
+        return {
+            "message": f"Processing status cleared for {filename}",
+            "cleared_files": 1
+        }
+    
+    # If no filename is provided, clear all statuses
+    total_cleared = len(event_handler.processing_status)
+    event_handler.processing_status.clear()
+    
+    return {
+        "message": "All processing statuses cleared",
+        "cleared_files": total_cleared
+    }
+
 @app.get("/list-files/")
 async def list_input_files():
     """List all PDF files in the input directory"""
@@ -815,6 +844,8 @@ async def root():
             "GET /debug-paths": "debug paths",
             "GET /processing-status": "List all",
             "GET /processing-status/{filename}": "List one",
+            "DELETE /processing-status": "Clear all",
+            "DELETE /processing-status/{filename}": "Clear one",
             "GET /": "This information",
         },
     }

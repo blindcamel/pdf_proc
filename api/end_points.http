@@ -13,3 +13,11 @@ get {{hostname}}/processing-status
 ###
 
 GET {{hostname}}/debug-paths
+
+###
+
+DELETE {{hostname}}/processing-status
+
+###
+
+DELETE {{hostname}}/processing-status/{filename}
