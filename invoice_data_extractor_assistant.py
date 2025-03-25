@@ -2,7 +2,7 @@ import ast
 import logging
 import os
 import re
-from typing import List, Optional
+from typing import Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
