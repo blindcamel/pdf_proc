@@ -166,22 +166,28 @@ class PDFHandler(FileSystemEventHandler):
             # Extract document information including page mapping
             page_mapping = None
             if result.get("text"):
-                #extract_data method to return page mapping
+                # extract_data method to return page mapping
                 page_mapping = await self.invoice_extractor.extract_data(result["text"])
 
                 # Split the document if needed
                 if len(set(doc_id for doc_id, _ in page_mapping.keys())) > 1:
-                    logger.info(f"Document {filename} contains multiple documents, splitting...")
+                    logger.info(
+                        f"Document {filename} contains multiple documents, splitting..."
+                    )
 
                     # Split based on page mapping
-                    split_paths = await self.pdf_splitter.split_document(file_path, page_mapping)
+                    split_paths = await self.pdf_splitter.split_document(
+                        file_path, page_mapping
+                    )
 
                     # Update status with split info
-                    self.processing_status[filename].update({
-                        "split": True,
-                        "split_count": len(split_paths),
-                        "split_paths": [str(p) for p in split_paths]
-                    })
+                    self.processing_status[filename].update(
+                        {
+                            "split": True,
+                            "split_count": len(split_paths),
+                            "split_paths": [str(p) for p in split_paths],
+                        }
+                    )
 
                     # Process each split document
                     for split_path in split_paths:
@@ -215,69 +221,86 @@ class PDFHandler(FileSystemEventHandler):
 
                             if doc_metadata:
                                 # Move the split file to the appropriate processed directory
-                                await self._move_processed_file(split_path, result["source"])
+                                await self._move_processed_file(
+                                    split_path, result["source"]
+                                )
 
                                 # Update status for this split file
-                                self.processing_status[split_filename].update({
-                                    "status": ProcessingStatus.COMPLETED,
-                                    "metadata": doc_metadata,
-                                    "completed_at": datetime.now(),
-                                })
+                                self.processing_status[split_filename].update(
+                                    {
+                                        "status": ProcessingStatus.COMPLETED,
+                                        "metadata": doc_metadata,
+                                        "completed_at": datetime.now(),
+                                    }
+                                )
 
                     # Original file processing is completed
-                    self.processing_status[filename].update({
-                        "status": ProcessingStatus.COMPLETED,
-                        "result": result,
-                        "completed_at": datetime.now(),
-                    })
+                    self.processing_status[filename].update(
+                        {
+                            "status": ProcessingStatus.COMPLETED,
+                            "result": result,
+                            "completed_at": datetime.now(),
+                        }
+                    )
 
                     return  # Early return since we've handled all split files
                 else:
                     # For single document PDFs, rename based on the first page data
                     first_key = next(iter(page_mapping.keys()))
                     metadata = page_mapping[first_key]
-                    
+
                     # Use the PDFRenamer to rename with the extracted data list
                     new_path = await self.pdf_renamer.rename_file(file_path, metadata)
-                    
+
                     if new_path:
                         # Update file path for further processing
                         file_path = new_path
                         new_filename = new_path.name
-                        
+
                         # Update status with rename info
-                        self.processing_status[filename].update({
-                            "renamed": True,
-                            "new_filename": new_filename,
-                            "new_path": str(new_path)
-                        })
-                        
+                        self.processing_status[filename].update(
+                            {
+                                "renamed": True,
+                                "new_filename": new_filename,
+                                "new_path": str(new_path),
+                            }
+                        )
+
                         # Create entry for new filename if needed
-                        if new_filename != filename and new_filename not in self.processing_status:
-                            self.processing_status[new_filename] = self.processing_status[filename].copy()
-                            self.processing_status[new_filename]["original_filename"] = filename
+                        if (
+                            new_filename != filename
+                            and new_filename not in self.processing_status
+                        ):
+                            self.processing_status[new_filename] = (
+                                self.processing_status[filename].copy()
+                            )
+                            self.processing_status[new_filename][
+                                "original_filename"
+                            ] = filename
             else:
                 logger.warning(f"Failed to extract page mapping from {filename}")
                 self.processing_status[filename].update({"page_mapping_failed": True})
 
             # Move the file to the appropriate processed directory if not already moved
             await self._move_processed_file(file_path, result.get("source", "direct"))
-            
+
             # Update status to completed
             status_key = file_path.name  # Use current filename which may have changed
             if status_key in self.processing_status:
-                self.processing_status[status_key].update({
-                    "status": ProcessingStatus.COMPLETED,
-                    "result": result,
-                    "completed_at": datetime.now(),
-                })
+                self.processing_status[status_key].update(
+                    {
+                        "status": ProcessingStatus.COMPLETED,
+                        "result": result,
+                        "completed_at": datetime.now(),
+                    }
+                )
             else:
                 # If status entry doesn't exist for new filename, create it
                 self.processing_status[status_key] = {
                     "status": ProcessingStatus.COMPLETED,
                     "result": result,
                     "completed_at": datetime.now(),
-                    "original_filename": filename if status_key != filename else None
+                    "original_filename": filename if status_key != filename else None,
                 }
 
         except Exception as e:
@@ -289,12 +312,14 @@ class PDFHandler(FileSystemEventHandler):
 
             # Update status to failed
             if filename in self.processing_status:
-                self.processing_status[filename].update({
-                    "status": ProcessingStatus.FAILED,
-                    "error": error_msg,
-                    "traceback": traceback_info,
-                    "failed_at": datetime.now(),
-                })
+                self.processing_status[filename].update(
+                    {
+                        "status": ProcessingStatus.FAILED,
+                        "error": error_msg,
+                        "traceback": traceback_info,
+                        "failed_at": datetime.now(),
+                    }
+                )
             else:
                 self.processing_status[filename] = {
                     "status": ProcessingStatus.FAILED,
@@ -303,7 +328,7 @@ class PDFHandler(FileSystemEventHandler):
                     "failed_at": datetime.now(),
                     "path": str(file_path),
                 }
-            
+
             # Try to move failed file to failed directory
             try:
                 settings.PROCESSED_FAILED_DIR.mkdir(parents=True, exist_ok=True)
@@ -311,17 +336,15 @@ class PDFHandler(FileSystemEventHandler):
                     target_path = settings.PROCESSED_FAILED_DIR / file_path.name
                     shutil.move(str(file_path), str(target_path))
                     if filename in self.processing_status:
-                        self.processing_status[filename].update({
-                            "file_moved": True,
-                            "final_location": str(target_path)
-                        })
+                        self.processing_status[filename].update(
+                            {"file_moved": True, "final_location": str(target_path)}
+                        )
             except Exception as move_error:
                 logger.error(f"Error moving failed file: {str(move_error)}")
                 if filename in self.processing_status:
-                    self.processing_status[filename].update({
-                        "file_moved": False,
-                        "move_error": str(move_error)
-                    })
+                    self.processing_status[filename].update(
+                        {"file_moved": False, "move_error": str(move_error)}
+                    )
 
 
 class PDFSplitter:
@@ -598,6 +621,45 @@ async def _process_and_track(self, file_path: Path):
             }
 
 
+async def _move_processed_file(self, file_path: Path, source_type: str):
+    """Move a processed file to the appropriate directory"""
+    try:
+        if source_type == "ocr":
+            settings.PROCESSED_OCR_DIR.mkdir(parents=True, exist_ok=True)
+            target_dir = settings.PROCESSED_OCR_DIR
+        else:
+            settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+            target_dir = settings.PROCESSED_DIR
+
+        # Check if file exists before moving
+        if file_path.exists():
+            target_path = target_dir / file_path.name
+            logger.info(f"Moving {file_path} to {target_path}")
+            shutil.move(str(file_path), str(target_path))
+
+            # Update status for the file
+            if file_path.name in self.processing_status:
+                self.processing_status[file_path.name].update(
+                    {"file_moved": True, "final_location": str(target_path)}
+                )
+            return target_path
+        else:
+            logger.error(f"File {file_path} does not exist, cannot move")
+            if file_path.name in self.processing_status:
+                self.processing_status[file_path.name].update(
+                    {"file_moved": False, "move_error": "File does not exist"}
+                )
+            return None
+
+    except Exception as e:
+        logger.error(f"Error moving file {file_path.name}: {str(e)}")
+        if file_path.name in self.processing_status:
+            self.processing_status[file_path.name].update(
+                {"file_moved": False, "move_error": str(e)}
+            )
+        return None
+
+
 # Initialize settings
 settings = Settings()
 settings.UPLOAD_DIR.mkdir(exist_ok=True)
@@ -731,14 +793,14 @@ async def process_existing_file(filename: str):
 async def get_processing_status(filename: str = None):
     """Get processing status for a specific file or all files"""
     event_handler = app.state.event_handler
-    
+
     # If no filename is provided, return all statuses
     if filename is None:
         return {
             "total_files": len(event_handler.processing_status),
-            "statuses": event_handler.processing_status
+            "statuses": event_handler.processing_status,
         }
-    
+
     # If filename is provided, return status for that file
     if filename not in event_handler.processing_status:
         raise HTTPException(
@@ -752,29 +814,30 @@ async def get_processing_status(filename: str = None):
 async def clear_processing_status(filename: str = None):
     """Clear processing status for a specific file or all files"""
     event_handler = app.state.event_handler
-    
+
     # If filename is provided, clear only that file's status
     if filename is not None:
         if filename not in event_handler.processing_status:
             raise HTTPException(
                 status_code=404, detail="File not found in processing history"
             )
-        
+
         # Remove the status entry for this file
         del event_handler.processing_status[filename]
         return {
             "message": f"Processing status cleared for {filename}",
-            "cleared_files": 1
+            "cleared_files": 1,
         }
-    
+
     # If no filename is provided, clear all statuses
     total_cleared = len(event_handler.processing_status)
     event_handler.processing_status.clear()
-    
+
     return {
         "message": "All processing statuses cleared",
-        "cleared_files": total_cleared
+        "cleared_files": total_cleared,
     }
+
 
 @app.get("/list-files/")
 async def list_input_files():
