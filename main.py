@@ -267,19 +267,12 @@ class PDFHandler(FileSystemEventHandler):
                         )
 
                         # Create entry for new filename if needed
-                        if (
-                            new_filename != filename
-                            and new_filename not in self.processing_status
-                        ):
-                            self.processing_status[new_filename] = (
-                                self.processing_status[filename].copy()
-                            )
-                            self.processing_status[new_filename][
-                                "original_filename"
-                            ] = filename
-            else:
-                logger.warning(f"Failed to extract page mapping from {filename}")
-                self.processing_status[filename].update({"page_mapping_failed": True})
+                        if new_filename != filename and new_filename not in self.processing_status:
+                            self.processing_status[new_filename] = self.processing_status[filename].copy()
+                            self.processing_status[new_filename]["original_filename"] = filename
+                    else:
+                        logger.warning(f"Failed to extract page mapping from {filename}")
+                        self.processing_status[filename].update({"page_mapping_failed": True})
 
             # Move the file to the appropriate processed directory if not already moved
             await self._move_processed_file(file_path, result.get("source", "direct"))
