@@ -339,7 +339,46 @@ class PDFHandler(FileSystemEventHandler):
                         {"file_moved": False, "move_error": str(move_error)}
                     )
 
+    async def _move_processed_file(self, file_path: Path, source_type: str):
+        """Move a processed file to the appropriate directory"""
+        try:
+            if source_type == "ocr":
+                settings.PROCESSED_OCR_DIR.mkdir(parents=True, exist_ok=True)
+                target_dir = settings.PROCESSED_OCR_DIR
+            else:
+                settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+                target_dir = settings.PROCESSED_DIR
 
+            # Check if file exists before moving
+            if file_path.exists():
+                target_path = target_dir / file_path.name
+                logger.info(f"Moving {file_path} to {target_path}")
+                shutil.move(str(file_path), str(target_path))
+                
+                # Update status for the file
+                if file_path.name in self.processing_status:
+                    self.processing_status[file_path.name].update({
+                        "file_moved": True,
+                        "final_location": str(target_path)
+                    })
+                return target_path
+            else:
+                logger.error(f"File {file_path} does not exist, cannot move")
+                if file_path.name in self.processing_status:
+                    self.processing_status[file_path.name].update({
+                        "file_moved": False,
+                        "move_error": "File does not exist"
+                    })
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error moving file {file_path.name}: {str(e)}")
+            if file_path.name in self.processing_status:
+                self.processing_status[file_path.name].update({
+                    "file_moved": False,
+                    "move_error": str(e)
+                })
+            return None
 class PDFSplitter:
     """Handles PDF document splitting based on page mapping data"""
 
