@@ -33,10 +33,12 @@ class InvoiceDataExtractor:
         self.client = AsyncOpenAI(api_key=api_key)
         self.assistant_id = assistant_id
 
-    async def extract_data(self, text: str) -> Optional[dict]:
+    async def extract_data(
+        self, text: str
+    ) -> Optional[dict[tuple[int, int], list[str]]]:
         """
         Extract invoice data from text using OpenAI Assistant API.
-        Returns: Dictionary with (document_id, page_number) tuple keys and 
+        Returns: Dictionary with (document_id, page_number) tuple keys and
                 [CompanyName, PO#, Invoice#] list values, or None if extraction fails.
         """
         try:
@@ -75,12 +77,8 @@ class InvoiceDataExtractor:
 
                 # Safely evaluate the string as a Python object
                 data_obj = ast.literal_eval(cleaned_result)
-                
-                # Extract first dictionary from list
-                if isinstance(data_obj, list) and len(data_obj) > 0 and isinstance(data_obj[0], dict):
-                    return data_obj[0]
-                
-                return None
+
+                return data_obj
 
             except (SyntaxError, ValueError) as e:
                 logger.error(f"Failed to parse assistant response: {cleaned_result}")
@@ -90,4 +88,3 @@ class InvoiceDataExtractor:
         except Exception as e:
             logger.error(f"API extraction error: {str(e)}")
             return None
-
