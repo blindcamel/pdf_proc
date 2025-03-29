@@ -21,7 +21,7 @@ from watchdog.events import FileSystemEventHandler
 
 # Local imports
 # from invoice_data_extractor import InvoiceDataExtractor
-from invoice_data_extractor_assistant import InvoiceDataExtractor
+from invoice_data_extractor import InvoiceDataExtractor
 from pdf_renamer import PDFRenamer
 
 # Configure logging
