@@ -1,3 +1,11 @@
+# retrieving the most up-to-date file path from the processing status dictionary rather than relying on the potentially outdated file_path variable. This ensures we're always trying to move the file from its current location, not from where it was originally.'
+
+# bug persists for single document pdfs:
+# ERROR:main:File /pdf_proc/filein/2.pdf does not exist, cannot move
+
+#probably filepath not updating in processing_status
+
+
 # Standard library imports
 import asyncio
 import logging
@@ -321,18 +329,25 @@ class PDFHandler(FileSystemEventHandler):
                     settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
                     target_dir = settings.PROCESSED_DIR
 
+                # Get the actual path for the current file status (which may have been renamed)
+                actual_path = Path(
+                    self.processing_status[status_key].get("path", str(file_path))
+                )
+
                 # Ensure file still exists before moving
-                if file_path.exists():
-                    target_path = target_dir / file_path.name
-                    logger.info(f"Moving {file_path} to {target_path}")
-                    shutil.move(str(file_path), str(target_path))
+                if actual_path.exists():
+                    target_path = target_dir / actual_path.name
+                    logger.info(f"Moving {actual_path} to {target_path}")
+                    shutil.move(str(actual_path), str(target_path))
 
                     self.processing_status[status_key].update(
                         {"file_moved": True, "final_location": str(target_path)}
                     )
-                    logger.info(f"Successfully moved {file_path.name} to {target_path}")
+                    logger.info(
+                        f"Successfully moved {actual_path.name} to {target_path}"
+                    )
                 else:
-                    logger.error(f"File {file_path} does not exist, cannot move")
+                    logger.error(f"File {actual_path} does not exist, cannot move")
                     self.processing_status[status_key].update(
                         {"file_moved": False, "move_error": "File does not exist"}
                     )
@@ -377,11 +392,16 @@ class PDFHandler(FileSystemEventHandler):
                 # Create failed directory if it doesn't exist
                 settings.PROCESSED_FAILED_DIR.mkdir(parents=True, exist_ok=True)
 
+                # Get the actual path from the status dictionary
+                actual_path = Path(
+                    self.processing_status[filename].get("path", str(file_path))
+                )
+
                 # Ensure file still exists before moving
-                if file_path.exists():
-                    target_path = settings.PROCESSED_FAILED_DIR / file_path.name
-                    logger.info(f"Moving failed file {file_path} to {target_path}")
-                    shutil.move(str(file_path), str(target_path))
+                if actual_path.exists():
+                    target_path = settings.PROCESSED_FAILED_DIR / actual_path.name
+                    logger.info(f"Moving failed file {actual_path} to {target_path}")
+                    shutil.move(str(actual_path), str(target_path))
 
                     # Update status with move information
                     if filename in self.processing_status:
@@ -389,10 +409,12 @@ class PDFHandler(FileSystemEventHandler):
                             {"file_moved": True, "final_location": str(target_path)}
                         )
                     logger.info(
-                        f"Successfully moved failed file {file_path.name} to {target_path}"
+                        f"Successfully moved failed file {actual_path.name} to {target_path}"
                     )
                 else:
-                    logger.error(f"Failed file {file_path} does not exist, cannot move")
+                    logger.error(
+                        f"Failed file {actual_path} does not exist, cannot move"
+                    )
                     if filename in self.processing_status:
                         self.processing_status[filename].update(
                             {"file_moved": False, "move_error": "File does not exist"}
@@ -534,6 +556,7 @@ class PDFSplitter:
                 logger.info(f"Cleaned up temporary directory: {self.temp_dir}")
         except Exception as e:
             logger.error(f"Error cleaning up temporary directory: {str(e)}")
+
 
 # Initialize settings
 settings = Settings()
