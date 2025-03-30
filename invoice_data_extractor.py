@@ -33,10 +33,11 @@ class InvoiceDataExtractor:
         self.client = AsyncOpenAI(api_key=api_key)
         self.assistant_id = assistant_id
 
-    async def extract_data(self, text: str) -> Optional[List[str]]:
+    async def extract_data(self, text: str):
         """
         Extract invoice data from text using OpenAI Assistant API.
-        Returns: List of [CompanyName, PO#, Invoice#] or None if extraction fails.
+        Returns: List of dictionaries containing page mapping data with document and page identifiers
+        as tuple keys and extraction data as values, or None if extraction fails.
         """
         try:
             # Create and run a new thread with the assistant
@@ -75,22 +76,20 @@ class InvoiceDataExtractor:
                 # Safely evaluate the string as a Python object
                 data_obj = ast.literal_eval(cleaned_result)
 
-                # Check if it's a dictionary with tuple keys
-                if isinstance(data_obj, dict) and any(
-                    isinstance(k, tuple) for k in data_obj.keys()
-                ):
-                    # Get the first value, which should be our list
-                    for value in data_obj.values():
-                        if isinstance(value, list) and len(value) == 3:
-                            return value
-                    raise ValueError("No valid data list found in dictionary values")
-
-                # Handle direct list format (original expectation)
-                elif isinstance(data_obj, list) and len(data_obj) == 3:
+                # Check if it's a list of dictionaries (new format)
+                if isinstance(data_obj, list) and all(isinstance(d, dict) for d in data_obj):
+                    # Validate structure - each dict should have tuple keys and list values
+                    for doc in data_obj:
+                        if not all(isinstance(k, tuple) and len(k) == 2 for k in doc.keys()):
+                            raise ValueError("Invalid key format: Expected (document_id, page_number) tuples")
+                        
+                        if not all(isinstance(v, list) and len(v) == 3 for v in doc.values()):
+                            raise ValueError("Invalid value format: Expected [CompanyName, PO#, Invoice#] lists")
+                    
                     return data_obj
 
                 raise ValueError(
-                    "Invalid response format: Expected a list with 3 items or dict with list values."
+                    "Invalid response format: Expected a list of dictionaries with tuple keys."
                 )
 
             except (SyntaxError, ValueError) as e:
