@@ -171,63 +171,130 @@ class PDFHandler(FileSystemEventHandler):
             if result.get("text"):
                 # Store extracted text in status
                 self.processing_status[filename]["extracted_text"] = result["text"]
-                
+
                 # Call extract_data and unpack the returned tuple
-                extracted_data, sent_text, api_response = await self.invoice_extractor.extract_data(result["text"])
-                
+                (
+                    extracted_data,
+                    sent_text,
+                    api_response,
+                ) = await self.invoice_extractor.extract_data(result["text"])
+
                 # Store API request and response data
-                self.processing_status[filename].update({
-                    "api_request_text": sent_text,
-                    "api_response": api_response
-                })
+                self.processing_status[filename].update(
+                    {"api_request_text": sent_text, "api_response": api_response}
+                )
 
                 if extracted_data:
                     logger.info(f"Extracted data from {filename}: {extracted_data}")
-                    
-                    # Check if all entries have document_id = 1
-                    all_doc_id_1 = all(key[0] == 1 for key in extracted_data.keys())
-                    
-                    if all_doc_id_1:
-                        # Get the value from the first page (assuming it's representative of the document)
-                        # Sort by page number to ensure we get the first page
+
+                    # Check if the PDF contains multiple documents
+                    doc_ids = set(key[0] for key in extracted_data.keys())
+                    if len(doc_ids) > 1:
+                        logger.info(
+                            f"Multiple documents detected in {filename}, initiating document splitting"
+                        )
+                        self.processing_status[filename].update(
+                            {"multiple_documents": True}
+                        )
+
+                        # Split the document based on extracted data
+                        split_paths = await self.pdf_splitter.split_document(
+                            file_path, extracted_data
+                        )
+
+                        if len(doc_ids) > 1:
+                            logger.info(
+                                f"Multiple documents detected in {filename}, initiating document splitting"
+                            )
+                            self.processing_status[filename].update(
+                                {"multiple_documents": True}
+                            )
+
+                            # Split the document based on extracted data
+                            split_paths = await self.pdf_splitter.split_document(
+                                file_path, extracted_data
+                            )
+
+                            if split_paths:
+                                logger.info(
+                                    f"Successfully split {filename} into {len(split_paths)} documents"
+                                )
+                                self.processing_status[filename].update(
+                                    {
+                                        "split": True,
+                                        "split_count": len(split_paths),
+                                        "split_paths": [str(p) for p in split_paths],
+                                    }
+                                )
+
+                                # Move the split files to the appropriate directory
+                                for split_path in split_paths:
+                                    # Process each split document
+                                    logger.info(
+                                        f"Processing split document: {split_path}"
+                                    )
+
+                                    # Future enhancement: Process each split file
+                                    # This would be implemented based on your specific requirements
+                            else:
+                                logger.warning(f"Failed to split {filename}")
+                                self.processing_status[filename].update(
+                                    {"split_failed": True}
+                                )
+                        else:
+                            # Handle single document case (existing code)
+                            # Get the value from the first page
+                            first_page_key = min(
+                                extracted_data.keys(), key=lambda k: k[1]
+                            )
+                            representative_value = extracted_data[first_page_key]
+
+                            # Rename file using the representative value
+                            new_path = await self.pdf_renamer.rename_file(
+                                file_path, representative_value
+                            )
+
+                            if new_path:
+                                # Update the file path and filename after renaming
+                                renamed = True
+                                file_path = new_path
+                                new_filename = new_path.name
+
+                                # Create an entry for the new filename if it doesn't exist
+                                if new_filename not in self.processing_status:
+                                    self.processing_status[new_filename] = (
+                                        self.processing_status[filename].copy()
+                                    )
+
+                                # Update the entry with extraction and rename info
+                                self.processing_status[new_filename].update(
+                                    {
+                                        "extracted_data": extracted_data,
+                                        "renamed": True,
+                                        "original_filename": original_filename,
+                                        "path": str(
+                                            file_path
+                                        ),  # Update the path to the new location
+                                    }
+                                )
+                                logger.info(
+                                    f"Renamed file from {filename} to {new_filename}"
+                                )
+                            else:
+                                logger.warning(f"Failed to rename {filename}")
+                                self.processing_status[filename].update(
+                                    {"rename_failed": True}
+                                )
+                    else:
+                        # Handle single document case (existing code)
+                        # Get the value from the first page
                         first_page_key = min(extracted_data.keys(), key=lambda k: k[1])
                         representative_value = extracted_data[first_page_key]
-                        
+
                         # Rename file using the representative value
                         new_path = await self.pdf_renamer.rename_file(
                             file_path, representative_value
                         )
-                        
-                        if new_path:
-                            # Update the file path and filename after renaming
-                            renamed = True
-                            file_path = new_path
-                            new_filename = new_path.name
-                            
-                            # Create an entry for the new filename if it doesn't exist
-                            if new_filename not in self.processing_status:
-                                self.processing_status[new_filename] = (
-                                    self.processing_status[filename].copy()
-                                )
-                            
-                            # Update the entry with extraction and rename info
-                            self.processing_status[new_filename].update(
-                                {
-                                    "extracted_data": extracted_data,
-                                    "renamed": True,
-                                    "original_filename": original_filename,
-                                    "path": str(
-                                        file_path
-                                    ),  # Update the path to the new location
-                                }
-                            )
-                            logger.info(f"Renamed file from {filename} to {new_filename}")
-                        else:
-                            logger.warning(f"Failed to rename {filename}")
-                            self.processing_status[filename].update({"rename_failed": True})
-                    else:
-                        logger.warning(f"Multiple documents detected (document_id != 1), not renaming {filename}")
-                        self.processing_status[filename].update({"multiple_documents": True})
                 else:
                     logger.warning(f"Failed to extract data from {filename}")
                     self.processing_status[filename].update({"extraction_failed": True})
@@ -756,14 +823,14 @@ async def process_existing_file(filename: str):
 async def get_processing_status(filename: str = None):
     """Get processing status for a specific file or all files"""
     event_handler = app.state.event_handler
-    
+
     # If no filename is provided, return all statuses
     if filename is None:
         return {
             "total_files": len(event_handler.processing_status),
-            "statuses": event_handler.processing_status
+            "statuses": event_handler.processing_status,
         }
-    
+
     # If filename is provided, return status for that file
     if filename not in event_handler.processing_status:
         raise HTTPException(
@@ -777,29 +844,30 @@ async def get_processing_status(filename: str = None):
 async def clear_processing_status(filename: str = None):
     """Clear processing status for a specific file or all files"""
     event_handler = app.state.event_handler
-    
+
     # If filename is provided, clear only that file's status
     if filename is not None:
         if filename not in event_handler.processing_status:
             raise HTTPException(
                 status_code=404, detail="File not found in processing history"
             )
-        
+
         # Remove the status entry for this file
         del event_handler.processing_status[filename]
         return {
             "message": f"Processing status cleared for {filename}",
-            "cleared_files": 1
+            "cleared_files": 1,
         }
-    
+
     # If no filename is provided, clear all statuses
     total_cleared = len(event_handler.processing_status)
     event_handler.processing_status.clear()
-    
+
     return {
         "message": "All processing statuses cleared",
-        "cleared_files": total_cleared
+        "cleared_files": total_cleared,
     }
+
 
 @app.get("/list-files/")
 async def list_input_files():
