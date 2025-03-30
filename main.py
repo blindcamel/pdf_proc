@@ -169,9 +169,17 @@ class PDFHandler(FileSystemEventHandler):
             new_filename = filename
 
             if result.get("text"):
-                extracted_data = await self.invoice_extractor.extract_data(
-                    result["text"]
-                )
+                # Store extracted text in status
+                self.processing_status[filename]["extracted_text"] = result["text"]
+                
+                # Call extract_data and unpack the returned tuple
+                extracted_data, sent_text, api_response = await self.invoice_extractor.extract_data(result["text"])
+                
+                # Store API request and response data
+                self.processing_status[filename].update({
+                    "api_request_text": sent_text,
+                    "api_response": api_response
+                })
 
                 if extracted_data:
                     logger.info(f"Extracted data from {filename}: {extracted_data}")
