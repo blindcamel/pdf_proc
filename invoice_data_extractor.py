@@ -58,13 +58,31 @@ class InvoiceDataExtractor:
 
             if run.status == "failed":
                 logger.error("Assistant processing failed.")
-                return None
+                return None, text, {"status": "failed", "response": None}
 
             # Fetch messages from the thread
             messages = await self.client.beta.threads.messages.list(
                 thread_id=thread_run.thread_id
             )
             response_text = messages.data[0].content[0].text.value.strip()
+
+            # Store the full response object for debugging
+            full_response = {
+                "thread_id": thread_run.thread_id,
+                "run_id": thread_run.id,
+                "status": run.status,
+                "response_text": response_text,
+                "messages": [
+                    {
+                        "role": msg.role,
+                        "content": [
+                            c.text.value if hasattr(c, "text") else str(c)
+                            for c in msg.content
+                        ],
+                    }
+                    for msg in messages.data
+                ],
+            }
 
             # Validate and parse response
             try:
@@ -77,16 +95,26 @@ class InvoiceDataExtractor:
                 data_obj = ast.literal_eval(cleaned_result)
 
                 # Check if it's a list of dictionaries (new format)
-                if isinstance(data_obj, list) and all(isinstance(d, dict) for d in data_obj):
+                if isinstance(data_obj, list) and all(
+                    isinstance(d, dict) for d in data_obj
+                ):
                     # Validate structure - each dict should have tuple keys and list values
                     for doc in data_obj:
-                        if not all(isinstance(k, tuple) and len(k) == 2 for k in doc.keys()):
-                            raise ValueError("Invalid key format: Expected (document_id, page_number) tuples")
-                        
-                        if not all(isinstance(v, list) and len(v) == 3 for v in doc.values()):
-                            raise ValueError("Invalid value format: Expected [CompanyName, PO#, Invoice#] lists")
-                    
-                    return data_obj
+                        if not all(
+                            isinstance(k, tuple) and len(k) == 2 for k in doc.keys()
+                        ):
+                            raise ValueError(
+                                "Invalid key format: Expected (document_id, page_number) tuples"
+                            )
+
+                        if not all(
+                            isinstance(v, list) and len(v) == 3 for v in doc.values()
+                        ):
+                            raise ValueError(
+                                "Invalid value format: Expected [CompanyName, PO#, Invoice#] lists"
+                            )
+
+                    return data_obj, text, full_response
 
                 raise ValueError(
                     "Invalid response format: Expected a list of dictionaries with tuple keys."
@@ -95,8 +123,20 @@ class InvoiceDataExtractor:
             except (SyntaxError, ValueError) as e:
                 logger.error(f"Failed to parse assistant response: {cleaned_result}")
                 logger.error(f"Parsing error: {str(e)}")
-                return None
+                return (
+                    None,
+                    text,
+                    {
+                        "status": "parse_error",
+                        "error": str(e),
+                        "response": full_response,
+                    },
+                )
 
         except Exception as e:
             logger.error(f"API extraction error: {str(e)}")
-            return None
+            return (
+                None,
+                text,
+                {"status": "api_error", "error": str(e), "response": None},
+            )
