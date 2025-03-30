@@ -183,37 +183,51 @@ class PDFHandler(FileSystemEventHandler):
 
                 if extracted_data:
                     logger.info(f"Extracted data from {filename}: {extracted_data}")
-                    new_path = await self.pdf_renamer.rename_file(
-                        file_path, extracted_data
-                    )
-
-                    if new_path:
-                        # Update the file path and filename after renaming
-                        renamed = True
-                        file_path = new_path
-                        new_filename = new_path.name
-
-                        # Create an entry for the new filename if it doesn't exist
-                        if new_filename not in self.processing_status:
-                            self.processing_status[new_filename] = (
-                                self.processing_status[filename].copy()
-                            )
-
-                        # Update the entry with extraction and rename info
-                        self.processing_status[new_filename].update(
-                            {
-                                "extracted_data": extracted_data,
-                                "renamed": True,
-                                "original_filename": original_filename,
-                                "path": str(
-                                    file_path
-                                ),  # Update the path to the new location
-                            }
+                    
+                    # Check if all entries have document_id = 1
+                    all_doc_id_1 = all(key[0] == 1 for key in extracted_data.keys())
+                    
+                    if all_doc_id_1:
+                        # Get the value from the first page (assuming it's representative of the document)
+                        # Sort by page number to ensure we get the first page
+                        first_page_key = min(extracted_data.keys(), key=lambda k: k[1])
+                        representative_value = extracted_data[first_page_key]
+                        
+                        # Rename file using the representative value
+                        new_path = await self.pdf_renamer.rename_file(
+                            file_path, representative_value
                         )
-                        logger.info(f"Renamed file from {filename} to {new_filename}")
+                        
+                        if new_path:
+                            # Update the file path and filename after renaming
+                            renamed = True
+                            file_path = new_path
+                            new_filename = new_path.name
+                            
+                            # Create an entry for the new filename if it doesn't exist
+                            if new_filename not in self.processing_status:
+                                self.processing_status[new_filename] = (
+                                    self.processing_status[filename].copy()
+                                )
+                            
+                            # Update the entry with extraction and rename info
+                            self.processing_status[new_filename].update(
+                                {
+                                    "extracted_data": extracted_data,
+                                    "renamed": True,
+                                    "original_filename": original_filename,
+                                    "path": str(
+                                        file_path
+                                    ),  # Update the path to the new location
+                                }
+                            )
+                            logger.info(f"Renamed file from {filename} to {new_filename}")
+                        else:
+                            logger.warning(f"Failed to rename {filename}")
+                            self.processing_status[filename].update({"rename_failed": True})
                     else:
-                        logger.warning(f"Failed to rename {filename}")
-                        self.processing_status[filename].update({"rename_failed": True})
+                        logger.warning(f"Multiple documents detected (document_id != 1), not renaming {filename}")
+                        self.processing_status[filename].update({"multiple_documents": True})
                 else:
                     logger.warning(f"Failed to extract data from {filename}")
                     self.processing_status[filename].update({"extraction_failed": True})
