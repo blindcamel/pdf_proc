@@ -94,30 +94,27 @@ class InvoiceDataExtractor:
                 # Safely evaluate the string as a Python object
                 data_obj = ast.literal_eval(cleaned_result)
 
-                # Check if it's a list of dictionaries (new format)
-                if isinstance(data_obj, list) and all(
-                    isinstance(d, dict) for d in data_obj
-                ):
-                    # Validate structure - each dict should have tuple keys and list values
-                    for doc in data_obj:
-                        if not all(
-                            isinstance(k, tuple) and len(k) == 2 for k in doc.keys()
-                        ):
-                            raise ValueError(
-                                "Invalid key format: Expected (document_id, page_number) tuples"
-                            )
+                # Check if it's a dictionary with tuple keys (expected format)
+                if isinstance(data_obj, dict):
+                    # Validate structure - dictionary should have tuple keys and list values
+                    if not all(
+                        isinstance(k, tuple) and len(k) == 2 for k in data_obj.keys()
+                    ):
+                        raise ValueError(
+                            "Invalid key format: Expected (document_id, page_number) tuples"
+                        )
 
-                        if not all(
-                            isinstance(v, list) and len(v) == 3 for v in doc.values()
-                        ):
-                            raise ValueError(
-                                "Invalid value format: Expected [CompanyName, PO#, Invoice#] lists"
-                            )
+                    if not all(
+                        isinstance(v, list) and len(v) == 3 for v in data_obj.values()
+                    ):
+                        raise ValueError(
+                            "Invalid value format: Expected [CompanyName, PO#, Invoice#] lists"
+                        )
 
                     return data_obj, text, full_response
 
                 raise ValueError(
-                    "Invalid response format: Expected a list of dictionaries with tuple keys."
+                    "Invalid response format: Expected a dictionary with tuple keys."
                 )
 
             except (SyntaxError, ValueError) as e:
