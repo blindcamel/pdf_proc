@@ -3,7 +3,7 @@
 # bug persists for single document pdfs:
 # ERROR:main:File /pdf_proc/filein/2.pdf does not exist, cannot move
 
-#probably filepath not updating in processing_status
+# probably filepath not updating in processing_status
 
 
 # Standard library imports
@@ -63,6 +63,7 @@ class Settings:
     PROCESSED_DIR = BASE_DIR / "processed"  # Base processed directory
     PROCESSED_OCR_DIR = BASE_DIR / "processed/OCR"  # OCR-specific directory
     PROCESSED_FAILED_DIR = BASE_DIR / "processed/failed"  # Directory for failed files
+    PROCESSED_ORIGINALS_DIR = BASE_DIR / "processed/processed_originals"  # Directory for original files
 
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
@@ -151,6 +152,7 @@ class PDFHandler(FileSystemEventHandler):
         file_path = Path(file_path)  # Ensure file_path is a Path object
         filename = file_path.name
         original_filename = filename  # Keep track of the original filename
+        original_path = file_path  # Keep track of the original path
 
         logger.info(f"Starting to process file: {filename}")
 
@@ -158,6 +160,7 @@ class PDFHandler(FileSystemEventHandler):
             # Update status to processing
             if filename in self.processing_status:
                 self.processing_status[filename]["status"] = ProcessingStatus.PROCESSING
+                self.processing_status[filename]["original_path"] = str(original_path)
                 logger.info(f"Updated status of {filename} to PROCESSING")
             else:
                 # Create an entry if it doesn't exist
@@ -165,6 +168,7 @@ class PDFHandler(FileSystemEventHandler):
                     "status": ProcessingStatus.PROCESSING,
                     "timestamp": datetime.now(),
                     "path": str(file_path),
+                    "original_path": str(original_path),
                 }
                 logger.info(f"Created new status entry for {filename} as PROCESSING")
 
@@ -210,91 +214,19 @@ class PDFHandler(FileSystemEventHandler):
                             file_path, extracted_data
                         )
 
-                        if len(doc_ids) > 1:
+                        if split_paths:
                             logger.info(
-                                f"Multiple documents detected in {filename}, initiating document splitting"
+                                f"Successfully split {filename} into {len(split_paths)} documents"
                             )
                             self.processing_status[filename].update(
-                                {"multiple_documents": True}
+                                {
+                                    "split": True,
+                                    "split_count": len(split_paths),
+                                    "split_paths": [str(p) for p in split_paths],
+                                }
                             )
-
-                            # Split the document based on extracted data
-                            split_paths = await self.pdf_splitter.split_document(
-                                file_path, extracted_data
-                            )
-
-                            if split_paths:
-                                logger.info(
-                                    f"Successfully split {filename} into {len(split_paths)} documents"
-                                )
-                                self.processing_status[filename].update(
-                                    {
-                                        "split": True,
-                                        "split_count": len(split_paths),
-                                        "split_paths": [str(p) for p in split_paths],
-                                    }
-                                )
-
-                                # Move the split files to the appropriate directory
-                                for split_path in split_paths:
-                                    # Process each split document
-                                    logger.info(
-                                        f"Processing split document: {split_path}"
-                                    )
-
-                                    # Future enhancement: Process each split file
-                                    # This would be implemented based on your specific requirements
-                            else:
-                                logger.warning(f"Failed to split {filename}")
-                                self.processing_status[filename].update(
-                                    {"split_failed": True}
-                                )
-                        else:
-                            # Handle single document case (existing code)
-                            # Get the value from the first page
-                            first_page_key = min(
-                                extracted_data.keys(), key=lambda k: k[1]
-                            )
-                            representative_value = extracted_data[first_page_key]
-
-                            # Rename file using the representative value
-                            new_path = await self.pdf_renamer.rename_file(
-                                file_path, representative_value
-                            )
-
-                            if new_path:
-                                # Update the file path and filename after renaming
-                                renamed = True
-                                file_path = new_path
-                                new_filename = new_path.name
-
-                                # Create an entry for the new filename if it doesn't exist
-                                if new_filename not in self.processing_status:
-                                    self.processing_status[new_filename] = (
-                                        self.processing_status[filename].copy()
-                                    )
-
-                                # Update the entry with extraction and rename info
-                                self.processing_status[new_filename].update(
-                                    {
-                                        "extracted_data": extracted_data,
-                                        "renamed": True,
-                                        "original_filename": original_filename,
-                                        "path": str(
-                                            file_path
-                                        ),  # Update the path to the new location
-                                    }
-                                )
-                                logger.info(
-                                    f"Renamed file from {filename} to {new_filename}"
-                                )
-                            else:
-                                logger.warning(f"Failed to rename {filename}")
-                                self.processing_status[filename].update(
-                                    {"rename_failed": True}
-                                )
                     else:
-                        # Handle single document case (existing code)
+                        # Handle single document case
                         # Get the value from the first page
                         first_page_key = min(extracted_data.keys(), key=lambda k: k[1])
                         representative_value = extracted_data[first_page_key]
@@ -303,6 +235,37 @@ class PDFHandler(FileSystemEventHandler):
                         new_path = await self.pdf_renamer.rename_file(
                             file_path, representative_value
                         )
+
+                        if new_path:
+                            # Update the file path and filename after renaming
+                            renamed = True
+                            file_path = new_path
+                            new_filename = new_path.name
+
+                            # Create an entry for the new filename if it doesn't exist
+                            if new_filename not in self.processing_status:
+                                self.processing_status[new_filename] = (
+                                    self.processing_status[filename].copy()
+                                )
+
+                            # Update the entry with extraction and rename info
+                            self.processing_status[new_filename].update(
+                                {
+                                    "extracted_data": extracted_data,
+                                    "renamed": True,
+                                    "original_filename": original_filename,
+                                    "original_path": str(original_path),
+                                    "path": str(file_path),
+                                }
+                            )
+                            logger.info(
+                                f"Renamed file from {filename} to {new_filename}"
+                            )
+                        else:
+                            logger.warning(f"Failed to rename {filename}")
+                            self.processing_status[filename].update(
+                                {"rename_failed": True}
+                            )
                 else:
                     logger.warning(f"Failed to extract data from {filename}")
                     self.processing_status[filename].update({"extraction_failed": True})
@@ -320,44 +283,92 @@ class PDFHandler(FileSystemEventHandler):
             )
             logger.info(f"Updated status of {status_key} to COMPLETED")
 
-            # Move the file to the appropriate processed directory
+            # Create necessary directories
+            settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+            settings.PROCESSED_ORIGINALS_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Move files to appropriate locations
             try:
-                if result["source"] == "ocr":
-                    settings.PROCESSED_OCR_DIR.mkdir(parents=True, exist_ok=True)
-                    target_dir = settings.PROCESSED_OCR_DIR
+                # Handle multiple documents case
+                if self.processing_status[status_key].get("multiple_documents", False):
+                    # Move original file to processed_originals
+                    if Path(original_path).exists():
+                        original_target = (
+                            settings.PROCESSED_ORIGINALS_DIR / original_path.name
+                        )
+                        logger.info(
+                            f"Moving original file {original_path} to {original_target}"
+                        )
+                        shutil.move(str(original_path), str(original_target))
+                        self.processing_status[status_key].update(
+                            {
+                                "original_file_moved": True,
+                                "original_final_location": str(original_target),
+                            }
+                        )
+
+                    # Move split files from temp_splits to processed
+                    split_paths = [
+                        Path(p)
+                        for p in self.processing_status[status_key].get(
+                            "split_paths", []
+                        )
+                    ]
+                    for split_path in split_paths:
+                        if split_path.exists():
+                            target_path = settings.PROCESSED_DIR / split_path.name
+                            logger.info(
+                                f"Moving split file {split_path} to {target_path}"
+                            )
+                            shutil.move(str(split_path), str(target_path))
+                            logger.info(
+                                f"Successfully moved split file {split_path.name} to {target_path}"
+                            )
+
+                # Handle single document case
                 else:
-                    settings.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-                    target_dir = settings.PROCESSED_DIR
+                    # Move original (pre-rename) file to processed_originals if renamed
+                    if renamed:
+                        original_path_obj = Path(original_path)
+                        if original_path_obj.exists():
+                            original_target = (
+                                settings.PROCESSED_ORIGINALS_DIR / original_filename
+                            )
+                            logger.info(
+                                f"Moving original file {original_path_obj} to {original_target}"
+                            )
+                            shutil.move(str(original_path_obj), str(original_target))
+                            self.processing_status[status_key].update(
+                                {
+                                    "original_file_moved": True,
+                                    "original_final_location": str(original_target),
+                                }
+                            )
 
-                # Get the actual path for the current file status (which may have been renamed)
-                actual_path = Path(
-                    self.processing_status[status_key].get("path", str(file_path))
-                )
+                    # Move renamed file to processed
+                    actual_path = Path(
+                        self.processing_status[status_key].get("path", str(file_path))
+                    )
+                    if actual_path.exists():
+                        target_path = settings.PROCESSED_DIR / actual_path.name
+                        logger.info(
+                            f"Moving renamed file {actual_path} to {target_path}"
+                        )
+                        shutil.move(str(actual_path), str(target_path))
+                        self.processing_status[status_key].update(
+                            {"file_moved": True, "final_location": str(target_path)}
+                        )
+                        logger.info(
+                            f"Successfully moved {actual_path.name} to {target_path}"
+                        )
+                    else:
+                        logger.error(f"File {actual_path} does not exist, cannot move")
+                        self.processing_status[status_key].update(
+                            {"file_moved": False, "move_error": "File does not exist"}
+                        )
 
-                # Ensure file still exists before moving
-                if actual_path.exists():
-                    target_path = target_dir / actual_path.name
-                    logger.info(f"Moving {actual_path} to {target_path}")
-                    shutil.move(str(actual_path), str(target_path))
-
-                    self.processing_status[status_key].update(
-                        {"file_moved": True, "final_location": str(target_path)}
-                    )
-                    logger.info(
-                        f"Successfully moved {actual_path.name} to {target_path}"
-                    )
-                else:
-                    logger.error(f"File {actual_path} does not exist, cannot move")
-                    self.processing_status[status_key].update(
-                        {"file_moved": False, "move_error": "File does not exist"}
-                    )
-            except PermissionError as e:
-                logger.error(f"Permission error moving {file_path.name}: {str(e)}")
-                self.processing_status[status_key].update(
-                    {"file_moved": False, "move_error": f"Permission denied: {str(e)}"}
-                )
-            except OSError as e:
-                logger.error(f"OS error moving {file_path.name}: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error moving files: {str(e)}")
                 self.processing_status[status_key].update(
                     {"file_moved": False, "move_error": str(e)}
                 )
@@ -387,56 +398,6 @@ class PDFHandler(FileSystemEventHandler):
                     "failed_at": datetime.now(),
                     "path": str(file_path),
                 }
-                # Try to move the failed file to the failed directory
-            try:
-                # Create failed directory if it doesn't exist
-                settings.PROCESSED_FAILED_DIR.mkdir(parents=True, exist_ok=True)
-
-                # Get the actual path from the status dictionary
-                actual_path = Path(
-                    self.processing_status[filename].get("path", str(file_path))
-                )
-
-                # Ensure file still exists before moving
-                if actual_path.exists():
-                    target_path = settings.PROCESSED_FAILED_DIR / actual_path.name
-                    logger.info(f"Moving failed file {actual_path} to {target_path}")
-                    shutil.move(str(actual_path), str(target_path))
-
-                    # Update status with move information
-                    if filename in self.processing_status:
-                        self.processing_status[filename].update(
-                            {"file_moved": True, "final_location": str(target_path)}
-                        )
-                    logger.info(
-                        f"Successfully moved failed file {actual_path.name} to {target_path}"
-                    )
-                else:
-                    logger.error(
-                        f"Failed file {actual_path} does not exist, cannot move"
-                    )
-                    if filename in self.processing_status:
-                        self.processing_status[filename].update(
-                            {"file_moved": False, "move_error": "File does not exist"}
-                        )
-            except PermissionError as e:
-                logger.error(
-                    f"Permission error moving failed file {file_path.name}: {str(e)}"
-                )
-                if filename in self.processing_status:
-                    self.processing_status[filename].update(
-                        {
-                            "file_moved": False,
-                            "move_error": f"Permission denied: {str(e)}",
-                        }
-                    )
-            except OSError as e:
-                logger.error(f"OS error moving failed file {file_path.name}: {str(e)}")
-                if filename in self.processing_status:
-                    self.processing_status[filename].update(
-                        {"file_moved": False, "move_error": str(e)}
-                    )
-
 
 class PDFSplitter:
     """Handles PDF document splitting based on page mapping data"""
@@ -481,12 +442,7 @@ class PDFSplitter:
                     company, po_num, inv_num = metadata
 
                     # Create output filename
-                    output_filename = f"{company}_PO{po_num}_INV{inv_num}.pdf"
-                    if len(document_groups) > 1:
-                        output_filename = (
-                            f"{company}_PO{po_num}_INV{inv_num}_doc{doc_id}.pdf"
-                        )
-
+                    output_filename = f"{company} {po_num} {inv_num}.pdf"
                     output_path = self.temp_dir / output_filename
 
                     # Create new PDF for this document group
@@ -562,6 +518,8 @@ class PDFSplitter:
 settings = Settings()
 settings.UPLOAD_DIR.mkdir(exist_ok=True)
 settings.INPUT_DIR.mkdir(exist_ok=True)
+settings.PROCESSED_DIR.mkdir(exist_ok=True, parents=True)
+settings.PROCESSED_ORIGINALS_DIR.mkdir(exist_ok=True, parents=True)
 
 
 async def process_pdf(file_path: Path) -> dict:
