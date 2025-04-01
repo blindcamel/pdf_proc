@@ -1,11 +1,3 @@
-# retrieving the most up-to-date file path from the processing status dictionary rather than relying on the potentially outdated file_path variable. This ensures we're always trying to move the file from its current location, not from where it was originally.'
-
-# bug persists for single document pdfs:
-# ERROR:main:File /pdf_proc/filein/2.pdf does not exist, cannot move
-
-# probably filepath not updating in processing_status
-
-
 # Standard library imports
 import asyncio
 import logging
@@ -63,7 +55,9 @@ class Settings:
     PROCESSED_DIR = BASE_DIR / "processed"  # Base processed directory
     PROCESSED_OCR_DIR = BASE_DIR / "processed/OCR"  # OCR-specific directory
     PROCESSED_FAILED_DIR = BASE_DIR / "processed/failed"  # Directory for failed files
-    PROCESSED_ORIGINALS_DIR = BASE_DIR / "processed/processed_originals"  # Directory for original files
+    PROCESSED_ORIGINALS_DIR = (
+        BASE_DIR / "processed/processed_originals"
+    )  # Directory for original files
 
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
     ALLOWED_MIME_TYPES = {"application/pdf"}
@@ -399,6 +393,7 @@ class PDFHandler(FileSystemEventHandler):
                     "path": str(file_path),
                 }
 
+
 class PDFSplitter:
     """Handles PDF document splitting based on page mapping data"""
 
@@ -412,15 +407,7 @@ class PDFSplitter:
         self.temp_dir.mkdir(exist_ok=True, parents=True)
 
     async def split_document(self, file_path, page_mapping):
-        """Split a PDF document based on document_id groupings in page mapping
-
-        Args:
-            file_path: Path to the PDF file to split
-            page_mapping: Dictionary with (document_id, page_number) keys and metadata values
-
-        Returns:
-            List of paths to the split PDF files
-        """
+        """Split a PDF document based on document_id groupings in page mapping"""
         logger.info(f"Splitting document: {file_path}")
 
         # Group pages by document_id
@@ -434,11 +421,12 @@ class PDFSplitter:
             with fitz.open(str(file_path)) as doc:
                 # Process each document group
                 for doc_id, page_info in document_groups.items():
-                    # Sort pages by page_number
+                    # Sort pages by absolute index to maintain proper document order
                     sorted_pages = sorted(page_info, key=lambda x: x[0])
 
-                    # Get metadata from first page in group
-                    metadata = page_mapping[(doc_id, sorted_pages[0][0])]
+                    # We need to use the metadata from the first page in this group
+                    # The metadata is already included in each tuple in page_info
+                    _, metadata = sorted_pages[0]
                     company, po_num, inv_num = metadata
 
                     # Create output filename
@@ -464,15 +452,23 @@ class PDFSplitter:
             page_mapping: Dictionary with (document_id, page_number) keys and metadata values
 
         Returns:
-            Dictionary with document_id keys and lists of (page_number, metadata) values
+            Dictionary with document_id keys and lists of (real_pdf_page_index, metadata) values
         """
         document_groups = {}
 
-        for (doc_id, page_num), metadata in page_mapping.items():
+        # For each document, get the real page indices in the PDF
+        sorted_keys = sorted(page_mapping.keys())  # Sort by (doc_id, page_num)
+
+        # Map each key to its real page index in the PDF (0-indexed)
+        for i, key in enumerate(sorted_keys):
+            doc_id, _ = key
+            metadata = page_mapping[key]
+
             if doc_id not in document_groups:
                 document_groups[doc_id] = []
 
-            document_groups[doc_id].append((page_num, metadata))
+            # The real page index in the PDF is i (0-indexed)
+            document_groups[doc_id].append((i, metadata))
 
         return document_groups
 
@@ -481,18 +477,21 @@ class PDFSplitter:
 
         Args:
             src_doc: Source PyMuPDF document
-            pages: List of (page_number, metadata) tuples
+            pages: List of (absolute_page_index, metadata) tuples
             output_path: Path where the new PDF should be saved
         """
         # Create a new PDF document
         new_doc = fitz.open()
 
         try:
-            # Add each page to the new document
-            for page_num, _ in pages:
-                # PyMuPDF pages are 0-indexed
+            # Sort pages by absolute index to maintain proper document order
+            sorted_pages = sorted(pages, key=lambda x: x[0])
+
+            # Add each page to the new document using the absolute indices
+            for absolute_index, _ in sorted_pages:
+                # PyMuPDF uses 0-indexed pages
                 new_doc.insert_pdf(
-                    src_doc, from_page=page_num - 1, to_page=page_num - 1
+                    src_doc, from_page=absolute_index, to_page=absolute_index
                 )
 
             # Save the new document
