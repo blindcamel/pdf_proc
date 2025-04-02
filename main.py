@@ -81,7 +81,7 @@ class PDFHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         """Triggered when a new file is created in the watched directory"""
-        if event.is_directory or not event.src_path.endswith(".pdf"):
+        if event.is_directory or not (event.src_path.lower().endswith(".pdf")):
             return
 
         file_path = Path(event.src_path)
@@ -698,7 +698,7 @@ async def clear_processing_status(filename: str = None):
 async def list_input_files():
     """List all PDF files in the input directory"""
     try:
-        files = [f for f in os.listdir(settings.INPUT_DIR) if f.endswith(".pdf")]
+        files = [f for f in os.listdir(settings.INPUT_DIR) if f.lower().endswith(".pdf")]
         return {"files": files}
     except Exception as e:
         logger.error(f"Error listing files: {str(e)}")
@@ -709,7 +709,7 @@ async def list_input_files():
 async def process_all_files():
     """Process all PDF files currently in the input directory"""
     event_handler = app.state.event_handler
-    input_files = [f for f in settings.INPUT_DIR.glob("*.pdf")]
+    input_files = [f for f in settings.INPUT_DIR.glob("*.[pP][dD][fF]")]
 
     if not input_files:
         return {"message": "No PDF files found in input directory"}
@@ -742,7 +742,7 @@ async def debug_paths():
         "files_in_input_dir": [
             f.name for f in settings.INPUT_DIR.glob("*") if f.is_file()
         ],
-        "pdf_files_in_input_dir": [f.name for f in settings.INPUT_DIR.glob("*.pdf")],
+        "pdf_files_in_input_dir": [f.name for f in settings.INPUT_DIR.glob("*.[pP][dD][fF]")],
     }
 
 
