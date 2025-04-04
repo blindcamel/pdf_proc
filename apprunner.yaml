@@ -3,9 +3,9 @@ runtime: python3
 build:
   commands:
     pre-build:
-      - apt-get update -y
-      - apt-get install -y tesseract-ocr poppler-utils libgl1-mesa-glx
-      - apt-get install -y mupdf || echo "mupdf not available, continuing anyway"
+      - apt update -y
+      - apt install -y tesseract-ocr poppler-utils libgl1-mesa-glx
+      - apt install -y mupdf || echo "mupdf not available, continuing anyway"
 
     build:
       - pip install --upgrade pip
