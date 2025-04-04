@@ -3,7 +3,7 @@ runtime: python311
 build:
   commands:
     pre-build:
-      - wget -c https://s3.amazonaws.com/amzn-s3-demo-bucket/test-lib.tar.gz -O - | tar -xz
+      - wget -c https://pdfprocs3.s3.us-west-2.amazonaws.com/app/pdf_proc_image_033025.tar -O - | tar -xz
 
     build:
       - pip3 install -r requirements.txt
