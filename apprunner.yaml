@@ -1,15 +1,12 @@
 version: 1.0
-runtime: python3
+runtime: python311
 build:
   commands:
     pre-build:
-      - apt update -y
-      - apt install -y tesseract-ocr poppler-utils libgl1-mesa-glx
-      - apt install -y mupdf || echo "mupdf not available, continuing anyway"
+      - wget -c https://s3.amazonaws.com/amzn-s3-demo-bucket/test-lib.tar.gz -O - | tar -xz
 
     build:
-      - pip install --upgrade pip
-      - pip install -r requirements.txt
+      - pip3 install -r requirements.txt
 run:
   command: uvicorn main:app --host 0.0.0.0 --port 8080
   network:
@@ -20,3 +17,6 @@ run:
       value: ${OPENAI_API_KEY}
     - name: OPENAI_ASSISTANT_ID
       value: ${OPENAI_ASSISTANT_ID}
+  secrets:
+    - name: prod/pdf_proc/openai_api_keys
+      value-from: "arn:aws:secretsmanager:us-west-2:834313359867:secret:prod/pdf_proc/openai_api_keys-MEwzS3"
