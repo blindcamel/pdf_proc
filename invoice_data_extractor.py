@@ -25,13 +25,17 @@ class InvoiceDataExtractor:
         )  # Store your assistant ID
 
         if not api_key:
-            raise ValueError("OpenAI API key is required")
+            logger.warning("OpenAI API key not found. Some features may not work.")
         if not assistant_id:
-            raise ValueError("OpenAI Assistant ID is required")
+            logger.warning("OpenAI Assistant ID not found. Some features may not work.")
 
-        # Initialize the async OpenAI client
-        self.client = AsyncOpenAI(api_key=api_key)
-        self.assistant_id = assistant_id
+        # Initialize the async OpenAI client if credentials are available
+        if api_key:
+            self.client = AsyncOpenAI(api_key=api_key)
+            self.assistant_id = assistant_id
+        else:
+            self.client = None
+            self.assistant_id = None
 
     async def extract_data(self, text: str):
         """

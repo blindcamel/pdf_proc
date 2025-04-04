@@ -66,6 +66,20 @@ class Settings:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
+def ensure_directories():
+    """Ensure all required directories exist"""
+    for directory in [
+        settings.UPLOAD_DIR,
+        settings.INPUT_DIR,
+        settings.PROCESSED_DIR,
+        settings.PROCESSED_OCR_DIR,
+        settings.PROCESSED_FAILED_DIR,
+        settings.PROCESSED_ORIGINALS_DIR,
+        Path("temp_splits"),
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
 class PDFHandler(FileSystemEventHandler):
     """Handles file system events for PDF processing"""
 
@@ -520,6 +534,8 @@ settings.INPUT_DIR.mkdir(exist_ok=True)
 settings.PROCESSED_DIR.mkdir(exist_ok=True, parents=True)
 settings.PROCESSED_ORIGINALS_DIR.mkdir(exist_ok=True, parents=True)
 
+ensure_directories()
+
 
 async def process_pdf(file_path: Path) -> dict:
     """
@@ -698,7 +714,9 @@ async def clear_processing_status(filename: str = None):
 async def list_input_files():
     """List all PDF files in the input directory"""
     try:
-        files = [f for f in os.listdir(settings.INPUT_DIR) if f.lower().endswith(".pdf")]
+        files = [
+            f for f in os.listdir(settings.INPUT_DIR) if f.lower().endswith(".pdf")
+        ]
         return {"files": files}
     except Exception as e:
         logger.error(f"Error listing files: {str(e)}")
@@ -742,8 +760,16 @@ async def debug_paths():
         "files_in_input_dir": [
             f.name for f in settings.INPUT_DIR.glob("*") if f.is_file()
         ],
-        "pdf_files_in_input_dir": [f.name for f in settings.INPUT_DIR.glob("*.[pP][dD][fF]")],
+        "pdf_files_in_input_dir": [
+            f.name for f in settings.INPUT_DIR.glob("*.[pP][dD][fF]")
+        ],
     }
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for AWS App Runner"""
+    return {"status": "healthy"}
 
 
 @app.get("/")
@@ -762,5 +788,14 @@ async def root():
             "DELETE /processing-status": "Clear all",
             "DELETE /processing-status/{filename}": "Clear one",
             "GET /": "This information",
+            "GET /health": "Health check endpoint for AWS App Runner",
         },
     }
+
+
+# Apprunner listening port
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")

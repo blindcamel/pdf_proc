@@ -18,3 +18,5 @@ testpdfs*
 testfiles
 *.pdf
 *.PDF
+Claude.md
+shortnames.json
