@@ -2,6 +2,8 @@ import ast
 import logging
 import os
 import re
+import boto3
+from botocore.exceptions import ClientError
 from typing import List, Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -18,8 +20,8 @@ class InvoiceDataExtractor:
         # Load environment variables from .env file
         load_dotenv()
 
-        # Get API key and Assistant ID from environment variables or argument
-        api_key = api_key or os.getenv("OPENAI_API_KEY")
+        # Get API key and Assistant ID from secrets or environment variables or argument
+        api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
         assistant_id = assistant_id or os.getenv(
             "OPENAI_ASSISTANT_ID"
         )  # Store your assistant ID
@@ -36,6 +38,40 @@ class InvoiceDataExtractor:
         else:
             self.client = None
             self.assistant_id = None
+
+    def _get_secret(self):
+        """Retrieve API key from AWS Secrets Manager"""
+        try:
+            secret_name = "prod/pdf_proc/openai_api_keys"
+            region_name = "us-west-2"
+
+            # Create a Secrets Manager client
+            session = boto3.session.Session()
+            client = session.client(
+                service_name="secretsmanager", region_name=region_name
+            )
+
+            # Get the secret value
+            get_secret_value_response = client.get_secret_value(SecretId=secret_name)
+
+            # Parse and return the secret
+            secret = get_secret_value_response["SecretString"]
+            # If secret is in JSON format, you'll need to parse it
+            # This assumes the secret contains a key called 'OPENAI_API_KEY'
+            import json
+
+            secret_dict = json.loads(secret)
+            return secret_dict.get("OPENAI_API_KEY")
+
+        except ClientError as e:
+            logger.error(f"Error retrieving secret: {str(e)}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing secret JSON: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error retrieving secret: {str(e)}")
+            return None
 
     async def extract_data(self, text: str):
         """
