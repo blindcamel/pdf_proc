@@ -3,8 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
+RUN apt update && apt install -y \
     poppler-utils \
     mupdf \
     libgl1-mesa-glx \

@@ -8,7 +8,11 @@ get {{hostname}}/list-files
 
 ###
 
-get {{hostname}}/processing-status
+get {{hostname}}/processing-status/
+
+###
+
+get {{hostname}}/processing-status/{filename}
 
 ###
 
@@ -20,4 +24,7 @@ DELETE {{hostname}}/processing-status
 
 ###
 
-DELETE {{hostname}}/processing-status/{filename}
+DELETE {{hostname}}/processing-status/510905_20250401_30567843_14160915113.pdf
+
+###
+GET {{hostname}}
