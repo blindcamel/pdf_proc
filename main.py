@@ -768,7 +768,7 @@ async def debug_paths():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for AWS App Runner"""
+    """Health check endpoint"""
     return {"status": "healthy"}
 
 
@@ -788,12 +788,12 @@ async def root():
             "DELETE /processing-status": "Clear all",
             "DELETE /processing-status/{filename}": "Clear one",
             "GET /": "This information",
-            "GET /health": "Health check endpoint for AWS App Runner",
+            "GET /health": "Health check endpoint",
         },
     }
 
 
-# Apprunner listening port
+# listening port
 if __name__ == "__main__":
     import uvicorn
 
