@@ -1,0 +1,60 @@
+{
+    "containerDefinitions": [
+        {
+            "name": "pdf_proc",
+            "image": "834313359867.dkr.ecr.us-west-2.amazonaws.com/pdf_proc:latest",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 8000,
+                    "hostPort": 8000,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [],
+            "secrets": [
+                {
+                    "name": "OPENAI_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-west-2:834313359867:secret:prod/pdf_proc/openai_api_keys-MEwzS3:OPENAI_API_KEY::"
+                },
+                {
+                    "name": "OPENAI_ASSISTANT_ID",
+                    "valueFrom": "arn:aws:secretsmanager:us-west-2:834313359867:secret:prod/pdf_proc/openai_api_keys-MEwzS3:OPENAI_ASSISTANT_ID::"
+                }
+            ],
+            "mountPoints": [],
+            "volumesFrom": [],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/pdf_proc",
+                    "awslogs-region": "us-west-2",
+                    "awslogs-stream-prefix": "ecs"
+                },
+                "secretOptions": []
+            },
+            "systemControls": []
+        }
+    ],
+    "family": "pdf_proc",
+    "executionRoleArn": "arn:aws:iam::834313359867:role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "volumes": [],
+    "placementConstraints": [],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "1024",
+    "memory": "2048",
+    "tags": [
+        {
+            "key": "Name",
+            "value": "pdf_proc"
+        },
+        {
+            "key": "Environment",
+            "value": "Production"
+        }
+    ]
+}
