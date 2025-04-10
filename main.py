@@ -667,17 +667,28 @@ async def get_processing_status(filename: str = None):
 
     # If no filename is provided, return all statuses
     if filename is None:
+        # Convert the processing_status dictionary to a serializable format
+        serializable_statuses = {}
+        for key, value in event_handler.processing_status.items():
+            # Ensure key is converted to string if it's not already
+            str_key = str(key)
+            serializable_statuses[str_key] = value
+        
         return {
-            "total_files": len(event_handler.processing_status),
-            "statuses": event_handler.processing_status,
+            "total_files": len(serializable_statuses),
+            "statuses": serializable_statuses,
         }
 
-    # If filename is provided, return status for that file
-    if filename not in event_handler.processing_status:
+    # If filename is provided, convert to string to ensure it's hashable
+    str_filename = str(filename)
+    
+    # Check if the file exists in processing status
+    if str_filename not in event_handler.processing_status:
         raise HTTPException(
             status_code=404, detail="File not found in processing history"
         )
-    return event_handler.processing_status[filename]
+    
+    return event_handler.processing_status[str_filename]
 
 
 @app.delete("/processing-status/")
