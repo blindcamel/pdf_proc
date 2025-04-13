@@ -1,0 +1,37 @@
+@hostname = https://pdf-process.fly.dev
+
+GET {{hostname}}
+
+###
+
+POST {{hostname}}/upload/
+
+###
+
+POST {{hostname}}/process-all/
+
+###
+get {{hostname}}/list-files
+
+###
+
+get {{hostname}}/processing-status/
+
+###
+
+get {{hostname}}/processing-status/80114.pdf
+
+###
+
+GET {{hostname}}/debug-paths
+
+###
+
+DELETE {{hostname}}/processing-status
+
+###
+
+DELETE {{hostname}}/processing-status/510905_20250401_30567843_14160915113.pdf
+
+###
+GET {{hostname}}
