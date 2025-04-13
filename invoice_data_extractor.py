@@ -13,33 +13,33 @@ logger = logging.getLogger(__name__)
 class InvoiceDataExtractor:
     """Handles extraction of invoice data using OpenAI Assistant API"""
 
-def __init__(
-    self, api_key: Optional[str] = None, assistant_id: Optional[str] = None
-):
-    # Load environment variables from .env file
-    load_dotenv()
+    def __init__(
+        self, api_key: Optional[str] = None, assistant_id: Optional[str] = None
+    ):
+        # Load environment variables from .env file
+        load_dotenv()
 
-    # Get API key with priority: 
-    # 1. Explicitly passed api_key parameter
-    # 2. Fly.io secrets or other secret stores via _get_secret()
-    # 3. Environment variable OPENAI_API_KEY
-    api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
-    
-    # Get Assistant ID from environment or parameter
-    assistant_id = assistant_id or os.getenv("OPENAI_ASSISTANT_ID") or os.getenv("FLY_OPENAI_ASSISTANT_ID")
+        # Get API key with priority: 
+        # 1. Explicitly passed api_key parameter
+        # 2. Fly.io secrets or other secret stores via _get_secret()
+        # 3. Environment variable OPENAI_API_KEY
+        api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
+        
+        # Get Assistant ID from environment or parameter
+        assistant_id = assistant_id or os.getenv("OPENAI_ASSISTANT_ID") or os.getenv("FLY_OPENAI_ASSISTANT_ID")
 
-    if not api_key:
-        logger.warning("OpenAI API key not found. Some features may not work.")
-    if not assistant_id:
-        logger.warning("OpenAI Assistant ID not found. Some features may not work.")
+        if not api_key:
+            logger.warning("OpenAI API key not found. Some features may not work.")
+        if not assistant_id:
+            logger.warning("OpenAI Assistant ID not found. Some features may not work.")
 
-    # Initialize the async OpenAI client if credentials are available
-    if api_key:
-        self.client = AsyncOpenAI(api_key=api_key)
-        self.assistant_id = assistant_id
-    else:
-        self.client = None
-        self.assistant_id = None
+        # Initialize the async OpenAI client if credentials are available
+        if api_key:
+            self.client = AsyncOpenAI(api_key=api_key)
+            self.assistant_id = assistant_id
+        else:
+            self.client = None
+            self.assistant_id = None
 
     def _get_secret(self):
         """Retrieve API key from environment variables (including Fly.io secrets)"""
