@@ -7,7 +7,6 @@ opencv-python>=4.11.0
 poppler-utils>=0.1.0
 pydantic>=2.10.4
 pymupdf>=1.25.1
-pytesseract>=0.3.13
 python-dotenv>=1.0.1
 python-magic>=0.4.27
 python-multipart>=0.0.20

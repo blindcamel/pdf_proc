@@ -13,7 +13,6 @@ from pathlib import Path
 # Third-party imports
 import fitz  # PyMuPDF
 import numpy as np
-import pytesseract
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from watchdog.observers import Observer
@@ -539,7 +538,7 @@ ensure_directories()
 
 async def process_pdf(file_path: Path) -> dict:
     """
-    Process PDF file and extract text using OCR if necessary.
+    Process PDF file and extract text.
     Returns a dictionary containing extracted text and metadata.
     """
     logger.info(f"Processing file: {file_path}")
@@ -547,37 +546,15 @@ async def process_pdf(file_path: Path) -> dict:
         doc = fitz.open(str(file_path))
         page_count = len(doc)
 
-        # Try direct text extraction first
+        # Extract text
         text = ""
         for page in doc:
             page_text = page.get_text()
             if page_text.strip():
                 text += page_text + "\n"
 
-        if text.strip():
-            doc.close()
-            return {"text": text.strip(), "source": "direct", "page_count": page_count}
-
-        # Fall back to OCR if no text found
-        logger.info(f"No text found in PDF {file_path}, falling back to OCR")
-        text = ""
-        for page in doc:
-            pix = page.get_pixmap()
-            print(
-                f"Pixmap dims: {pix.width}x{pix.height}, samples per pixel: {pix.n}"
-            )  # Debug
-
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                pix.height, pix.width, pix.n
-            )
-
-            print(f"Numpy array shape: {img.shape}")  # Debug
-
-            text += pytesseract.image_to_string(img) + "\n"
-            print(f"OCR output length: {len(text)}")  # Debug
-
         doc.close()
-        return {"text": text.strip(), "source": "ocr", "page_count": page_count}
+        return {"text": text.strip(), "source": "direct", "page_count": page_count}
 
     except Exception as e:
         logger.error(f"Error processing PDF {file_path}: {str(e)}")
@@ -673,7 +650,7 @@ async def get_processing_status(filename: str = None):
             # Ensure key is converted to string if it's not already
             str_key = str(key)
             serializable_statuses[str_key] = value
-        
+
         return {
             "total_files": len(serializable_statuses),
             "statuses": serializable_statuses,
@@ -681,13 +658,13 @@ async def get_processing_status(filename: str = None):
 
     # If filename is provided, convert to string to ensure it's hashable
     str_filename = str(filename)
-    
+
     # Check if the file exists in processing status
     if str_filename not in event_handler.processing_status:
         raise HTTPException(
             status_code=404, detail="File not found in processing history"
         )
-    
+
     return event_handler.processing_status[str_filename]
 
 
