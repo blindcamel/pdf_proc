@@ -187,27 +187,29 @@ class InvoiceDataExtractor:
                 # Safely evaluate the string as a Python object
                 data_obj = ast.literal_eval(cleaned_result)
 
-                # Check if it's a dictionary with tuple keys (expected format)
-                if isinstance(data_obj, dict):
+                # Format should be a list containing a dictionary
+                if isinstance(data_obj, list) and len(data_obj) > 0 and isinstance(data_obj[0], dict):
+                    dict_obj = data_obj[0]  # Extract the dictionary from the list
+                    
                     # Validate structure - dictionary should have tuple keys and list values
                     if not all(
-                        isinstance(k, tuple) and len(k) == 2 for k in data_obj.keys()
+                        isinstance(k, tuple) and len(k) == 2 for k in dict_obj.keys()
                     ):
                         raise ValueError(
                             "Invalid key format: Expected (document_id, page_number) tuples"
                         )
 
                     if not all(
-                        isinstance(v, list) and len(v) == 3 for v in data_obj.values()
+                        isinstance(v, list) and len(v) == 3 for v in dict_obj.values()
                     ):
                         raise ValueError(
                             "Invalid value format: Expected [CompanyName, PO#, Invoice#] lists"
                         )
 
-                    return data_obj, sent_content, full_response
+                    return dict_obj, sent_content, full_response
 
                 raise ValueError(
-                    "Invalid response format: Expected a dictionary with tuple keys."
+                    "Invalid response format: Expected a list containing a dictionary with tuple keys."
                 )
 
             except (SyntaxError, ValueError) as e:
