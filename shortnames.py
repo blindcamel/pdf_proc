@@ -84,28 +84,28 @@ shortnames = {
 }
 
 
-def process_company_name(extracted_name):
-    """
-    Process an extracted company name against the shortnames dictionary.
+# def process_company_name(extracted_name):
+#     """
+#     Process an extracted company name against the shortnames dictionary.
 
-    Parameters:
-        extracted_name (str): The company name extracted from a document
+#     Parameters:
+#         extracted_name (str): The company name extracted from a document
 
-    Returns:
-        str: The standardized short name if a match is found, or the original name
-    """
-    # Handle empty or None values
-    if not extracted_name or not isinstance(extracted_name, str):
-        return "error"
+#     Returns:
+#         str: The standardized short name if a match is found, or the original name
+#     """
+#     # Handle empty or None values
+#     if not extracted_name or not isinstance(extracted_name, str):
+#         return "error"
 
-    # Convert to lowercase for case-insensitive matching
-    extracted_lower = extracted_name.lower()
+#     # Convert to lowercase for case-insensitive matching
+#     extracted_lower = extracted_name.lower()
 
-    # Check each key in the dictionary for partial matches
-    for key in shortnames:
-        key_lower = key.lower()
-        if key_lower in extracted_lower or extracted_lower in key_lower:
-            return shortnames[key]
+#     # Check each key in the dictionary for partial matches
+#     for key in shortnames:
+#         key_lower = key.lower()
+#         if key_lower in extracted_lower or extracted_lower in key_lower:
+#             return shortnames[key]
 
-    # If no match found, return the original name
-    return extracted_name
+#     # If no match found, return the original name
+#     return extracted_name
