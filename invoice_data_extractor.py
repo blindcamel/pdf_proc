@@ -3,8 +3,6 @@ import logging
 import os
 import re
 import base64
-import boto3
-from botocore.exceptions import ClientError
 from typing import List, Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -15,61 +13,50 @@ logger = logging.getLogger(__name__)
 class InvoiceDataExtractor:
     """Handles extraction of invoice data using OpenAI Assistant API"""
 
-    def __init__(
-        self, api_key: Optional[str] = None, assistant_id: Optional[str] = None
-    ):
-        # Load environment variables from .env file
-        load_dotenv()
+def __init__(
+    self, api_key: Optional[str] = None, assistant_id: Optional[str] = None
+):
+    # Load environment variables from .env file
+    load_dotenv()
 
-        # Get API key and Assistant ID from secrets or environment variables or argument
-        api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
-        assistant_id = assistant_id or os.getenv(
-            "OPENAI_ASSISTANT_ID"
-        )  # Store your assistant ID
+    # Get API key with priority: 
+    # 1. Explicitly passed api_key parameter
+    # 2. Fly.io secrets or other secret stores via _get_secret()
+    # 3. Environment variable OPENAI_API_KEY
+    api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
+    
+    # Get Assistant ID from environment or parameter
+    assistant_id = assistant_id or os.getenv("OPENAI_ASSISTANT_ID") or os.getenv("FLY_OPENAI_ASSISTANT_ID")
 
-        if not api_key:
-            logger.warning("OpenAI API key not found. Some features may not work.")
-        if not assistant_id:
-            logger.warning("OpenAI Assistant ID not found. Some features may not work.")
+    if not api_key:
+        logger.warning("OpenAI API key not found. Some features may not work.")
+    if not assistant_id:
+        logger.warning("OpenAI Assistant ID not found. Some features may not work.")
 
-        # Initialize the async OpenAI client if credentials are available
-        if api_key:
-            self.client = AsyncOpenAI(api_key=api_key)
-            self.assistant_id = assistant_id
-        else:
-            self.client = None
-            self.assistant_id = None
+    # Initialize the async OpenAI client if credentials are available
+    if api_key:
+        self.client = AsyncOpenAI(api_key=api_key)
+        self.assistant_id = assistant_id
+    else:
+        self.client = None
+        self.assistant_id = None
 
     def _get_secret(self):
-        """Retrieve API key from AWS Secrets Manager"""
+        """Retrieve API key from environment variables (including Fly.io secrets)"""
         try:
-            secret_name = "prod/pdf_proc/openai_api_keys"
-            region_name = "us-west-2"
-
-            # Create a Secrets Manager client
-            session = boto3.session.Session()
-            client = session.client(
-                service_name="secretsmanager", region_name=region_name
-            )
-
-            # Get the secret value
-            get_secret_value_response = client.get_secret_value(SecretId=secret_name)
-
-            # Parse and return the secret
-            secret = get_secret_value_response["SecretString"]
-            # If secret is in JSON format, you'll need to parse it
-            # This assumes the secret contains a key called 'OPENAI_API_KEY'
-            import json
-
-            secret_dict = json.loads(secret)
-            return secret_dict.get("OPENAI_API_KEY")
-
-        except ClientError as e:
-            logger.error(f"Error retrieving secret: {str(e)}")
+            # Try to get from Fly.io secrets (which are exposed as environment variables)
+            fly_api_key = os.getenv("FLY_OPENAI_API_KEY")
+            if fly_api_key:
+                logger.info("Using API key from Fly.io secrets")
+                return fly_api_key
+                
+            # If not running in Fly.io environment, check for other potential sources
+            # This is a placeholder for any other secret management you might implement
+            logger.info("No Fly.io secrets found, checking alternative sources")
+            
+            # For now, return None and let the calling code fall back to environment variables
             return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Error parsing secret JSON: {str(e)}")
-            return None
+
         except Exception as e:
             logger.error(f"Unexpected error retrieving secret: {str(e)}")
             return None
