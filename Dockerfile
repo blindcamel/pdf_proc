@@ -6,6 +6,8 @@ WORKDIR /app
 RUN apt update && apt install -y \
     poppler-utils \
     mupdf \
+    unzip \
+    zip \
     libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 

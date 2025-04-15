@@ -4,7 +4,9 @@ import logging
 import os
 import uuid
 import shutil
+import tempfile
 import traceback
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
@@ -14,7 +16,8 @@ from pathlib import Path
 import fitz  # PyMuPDF
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -758,6 +761,37 @@ async def debug_paths():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/download")
+async def download_processed_files(background_tasks: BackgroundTasks):
+    """Download processed files as a zip archive"""
+    try:
+        # Create a temporary file for the zip using mkstemp
+        fd, temp_name = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)  # Close the file descriptor
+        temp_path = Path(temp_name)
+
+        # Create a zip file containing processed PDFs
+        with zipfile.ZipFile(temp_path, "w") as zipf:
+            # Add all PDF files from the processed directory
+            for pdf_file in settings.PROCESSED_DIR.glob("*.pdf"):
+                # Add file to the zip with just the filename (not the full path)
+                zipf.write(pdf_file, arcname=pdf_file.name)
+
+        # Add cleanup task to background tasks
+        background_tasks.add_task(lambda: Path(temp_path).unlink(missing_ok=True))
+
+        # Return the zip file as a download
+        return FileResponse(
+            path=temp_path, filename="processed.zip", media_type="application/zip"
+        )
+
+    except Exception as e:
+        logger.error(f"Error creating download: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error creating download: {str(e)}"
+        )
 
 
 @app.get("/")

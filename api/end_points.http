@@ -4,6 +4,10 @@ get {{hostname}}
 
 ###
 
+GET {{hostname}}/download
+
+###
+
 get {{hostname}}/list-files
 
 ###

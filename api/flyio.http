@@ -4,7 +4,12 @@ GET {{hostname}}
 
 ###
 
-POST {{hostname}}/upload/
+POST -F "file=@/full/path/to/your/file.pdf" https://pdf-process.fly.dev/upload/
+
+###
+
+POST {{hostname}}/uploads/
+
 
 ###
 
