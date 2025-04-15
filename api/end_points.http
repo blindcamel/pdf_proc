@@ -4,7 +4,7 @@ get {{hostname}}
 
 ###
 
-GET {{hostname}}/download
+
 
 ###
 
@@ -31,4 +31,10 @@ DELETE {{hostname}}/processing-status
 DELETE {{hostname}}/processing-status/510905_20250401_30567843_14160915113.pdf
 
 ###
+
 GET {{hostname}}
+
+###
+
+#Curl
+curl -O -J -L http://localhost:8000/download

@@ -773,22 +773,36 @@ async def download_processed_files(background_tasks: BackgroundTasks):
         temp_path = Path(temp_name)
 
         # Create a zip file containing processed PDFs
-        with zipfile.ZipFile(temp_path, "w") as zipf:
+        with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             # Add all PDF files from the processed directory
+            files_added = 0
             for pdf_file in settings.PROCESSED_DIR.glob("*.pdf"):
-                # Add file to the zip with just the filename (not the full path)
-                zipf.write(pdf_file, arcname=pdf_file.name)
+                if pdf_file.exists():
+                    zipf.write(pdf_file, arcname=pdf_file.name)
+                    files_added += 1
+            
+            if files_added == 0:
+                return {"message": "No files found to download", "status": "empty"}
 
-        # Add cleanup task to background tasks
-        background_tasks.add_task(lambda: Path(temp_path).unlink(missing_ok=True))
+        # Ensure the file is fully written before serving
+        if temp_path.exists() and temp_path.stat().st_size > 0:
+            # Add cleanup task to background tasks
+            background_tasks.add_task(lambda p=temp_path: p.unlink(missing_ok=True))
 
-        # Return the zip file as a download
-        return FileResponse(
-            path=temp_path, filename="processed.zip", media_type="application/zip"
-        )
+            # Return the zip file as a download
+            return FileResponse(
+                path=str(temp_path),  # Convert Path to string explicitly
+                filename="processed.zip",
+                media_type="application/zip"
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create zip file")
 
     except Exception as e:
         logger.error(f"Error creating download: {str(e)}")
+        # Clean up the temp file if it exists
+        if 'temp_path' in locals() and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=500, detail=f"Error creating download: {str(e)}"
         )
