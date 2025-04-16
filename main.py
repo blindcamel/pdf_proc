@@ -47,8 +47,7 @@ class Settings:
         __file__
     ).parent.absolute()  # Get the directory where script is running
 
-    # UPLOAD_DIR = Path("uploads")  # Directory for API uploaded files
-    UPLOAD_DIR = BASE_DIR / "uploads"  # Directory for API uploaded files
+    UPLOAD_DIR = BASE_DIR / "upload"  # Directory for API uploaded files
 
     # INPUT_DIR = Path("filein")  # Directory to watch for new files
     # PROCESSED_DIR = Path("processed")  # Base processed directory
@@ -597,9 +596,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-@app.post("/uploads/")
+@app.post("/upload/")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Handle PDF uploads through API endpoint"""
+    """Handle PDF upload through API endpoint"""
     file_path = None
     try:
         file_path = settings.UPLOAD_DIR / f"{uuid.uuid4()}.pdf"
@@ -814,9 +813,9 @@ async def root():
     return {
         "message": "PDF Processing API",
         "endpoints": {
-            "POST /uploads": "Upload and process a new PDF file",
+            "POST /upload": "Upload and process a new PDF file",
             "POST /process-file": "Process an existing file from the input directory",
-            "POST /process-all": "Process all files in /uploads",
+            "POST /process-all": "Process all files in /upload",
             "GET /list-files": "List all PDF files in the input directory",
             "GET /debug-paths": "debug paths",
             "GET /processing-status": "List all",
