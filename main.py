@@ -598,10 +598,10 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post("/upload/")
 async def upload_pdf(file: UploadFile = File(...)):
-    """Handle PDF upload through API endpoint"""
+    """Handle Zip upload through API endpoint"""
     file_path = None
     try:
-        file_path = settings.UPLOAD_DIR / f"{uuid.uuid4()}.pdf"
+        file_path = settings.UPLOAD_DIR / f"{uuid.uuid4()}.zip"
         logger.info(f"Saving uploaded file to: {file_path}")
 
         with open(file_path, "wb") as buffer:
