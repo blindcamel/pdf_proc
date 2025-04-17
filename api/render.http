@@ -13,7 +13,7 @@ POST {{hostname}}/uploads/
 
 ###
 
-POST {{hostname}}/process-all/
+POST {{hostname}}/process/041025.zip
 
 ###
 get {{hostname}}/list-files

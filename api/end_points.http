@@ -4,7 +4,7 @@ get {{hostname}}
 
 ###
 
-
+POST {{hostname}}/process/041725.zip
 
 ###
 
@@ -38,3 +38,7 @@ GET {{hostname}}
 
 #Curl
 curl -O -J -L http://localhost:8000/download
+
+###
+
+curl -X POST -F "file=@041025.zip" http://localhost:8000/upload

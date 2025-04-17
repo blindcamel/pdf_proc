@@ -601,25 +601,24 @@ async def upload_pdf(file: UploadFile = File(...)):
     """Handle Zip upload through API endpoint"""
     file_path = None
     try:
-        file_path = settings.UPLOAD_DIR / f"{uuid.uuid4()}.zip"
+        # Use the original filename instead of generating a UUID
+        file_path = settings.UPLOAD_DIR / file.filename
         logger.info(f"Saving uploaded file to: {file_path}")
 
         with open(file_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
 
-        return await process_pdf(file_path)
-
+        # Return success message without processing
+        return {
+            "status": "success",
+            "message": "File uploaded successfully",
+            "filename": file.filename,
+            "file_path": str(file_path),
+        }
     except Exception as e:
         logger.error(f"Error processing upload: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if file_path and file_path.exists():
-            try:
-                file_path.unlink()
-                logger.info(f"Cleaned up file: {file_path}")
-            except Exception as e:
-                logger.error(f"Error during cleanup: {str(e)}")
 
 
 @app.post("/process/{filename}")
@@ -754,7 +753,7 @@ async def list_input_files():
     """List all PDF files in the input directory"""
     try:
         files = [
-            f for f in os.listdir(settings.INPUT_DIR) if f.lower().endswith(".pdf")
+            f for f in os.listdir(settings.UPLOAD_DIR) if f.lower().endswith(".pdf")
         ]
         return {"files": files}
     except Exception as e:
