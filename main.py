@@ -624,7 +624,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 @app.post("/process/{filename}")
 async def process_zip_file(filename: str):
     """
-    Extract the contents of a zip file from upload directory to filein directory
+    Extract the contents of a zip file to the input directory and process
     """
     # Verify the filename has .zip extension
     if not filename.lower().endswith(".zip"):
@@ -670,20 +670,90 @@ async def process_zip_file(filename: str):
         )
 
 
-@app.post("/process-file/")
-async def process_existing_file(filename: str):
-    """Process a file that already exists in the input directory"""
-    file_path = settings.INPUT_DIR / filename
-    logger.info(f"Request to process existing file: {file_path}")
+@app.get("/download")
+async def download_processed_files(background_tasks: BackgroundTasks):
+    """Download processed files as a zip file"""
+    try:
+        # Create a temporary file for the zip using mkstemp
+        fd, temp_name = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)  # Close the file descriptor
+        temp_path = Path(temp_name)
 
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+        # Create a zip file containing processed PDFs
+        with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            # Add all PDF files from the processed directory
+            files_added = 0
+            for pdf_file in settings.PROCESSED_DIR.glob("*.pdf"):
+                if pdf_file.exists():
+                    zipf.write(pdf_file, arcname=pdf_file.name)
+                    files_added += 1
+
+            if files_added == 0:
+                return {"message": "No files found to download", "status": "empty"}
+
+        # Ensure the file is fully written before serving
+        if temp_path.exists() and temp_path.stat().st_size > 0:
+            # Add cleanup task to background tasks
+            background_tasks.add_task(lambda p=temp_path: p.unlink(missing_ok=True))
+
+            # Return the zip file as a download
+            return FileResponse(
+                path=str(temp_path),  # Convert Path to string explicitly
+                filename="processed.zip",
+                media_type="application/zip",
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create zip file")
+
+    except Exception as e:
+        logger.error(f"Error creating download: {str(e)}")
+        # Clean up the temp file if it exists
+        if "temp_path" in locals() and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=500, detail=f"Error creating download: {str(e)}"
+        )
+
+
+@app.post("/cleanup")
+async def cleanup_files():
+    """Remove all files in the upload, processed, and filein directories while preserving subdirectories"""
+    removed_count = 0
+    skipped_count = 0
+
+    # Define directories to clean
+    directories = [settings.UPLOAD_DIR, settings.PROCESSED_DIR, settings.INPUT_DIR]
 
     try:
-        return await process_pdf(file_path)
+        # Process each directory
+        for directory in directories:
+            if not directory.exists() or not directory.is_dir():
+                logger.warning(
+                    f"Directory does not exist or is not a directory: {directory}"
+                )
+                continue
+
+            # Remove only files in the root of each directory
+            for file_path in directory.glob("*"):
+                if file_path.is_file():
+                    try:
+                        file_path.unlink()
+                        removed_count += 1
+                        logger.info(f"Removed file: {file_path}")
+                    except Exception as e:
+                        logger.error(f"Error removing file {file_path}: {str(e)}")
+                        skipped_count += 1
+
+        return {
+            "status": "success",
+            "message": f"Cleanup completed. Removed {removed_count} files, skipped {skipped_count} files.",
+            "removed_count": removed_count,
+            "skipped_count": skipped_count,
+        }
+
     except Exception as e:
-        logger.error(f"Error processing file {filename}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error during cleanup: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error during cleanup: {str(e)}")
 
 
 @app.get("/processing-status/")
@@ -748,8 +818,21 @@ async def clear_processing_status(filename: str = None):
     }
 
 
-@app.get("/list-files/")
-async def list_input_files():
+@app.get("/list-upload/")
+async def list_upload():
+    """List all Zip files in the upload directory"""
+    try:
+        files = [
+            f for f in os.listdir(settings.UPLOAD_DIR) if f.lower().endswith(".zip")
+        ]
+        return {"files": files}
+    except Exception as e:
+        logger.error(f"Error listing files: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/list-input")
+async def list_input():
     """List all PDF files in the input directory"""
     try:
         files = [
@@ -787,51 +870,6 @@ async def process_all_files():
     }
 
 
-@app.get("/download")
-async def download_processed_files(background_tasks: BackgroundTasks):
-    """Download processed files as a zip archive"""
-    try:
-        # Create a temporary file for the zip using mkstemp
-        fd, temp_name = tempfile.mkstemp(suffix=".zip")
-        os.close(fd)  # Close the file descriptor
-        temp_path = Path(temp_name)
-
-        # Create a zip file containing processed PDFs
-        with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # Add all PDF files from the processed directory
-            files_added = 0
-            for pdf_file in settings.PROCESSED_DIR.glob("*.pdf"):
-                if pdf_file.exists():
-                    zipf.write(pdf_file, arcname=pdf_file.name)
-                    files_added += 1
-
-            if files_added == 0:
-                return {"message": "No files found to download", "status": "empty"}
-
-        # Ensure the file is fully written before serving
-        if temp_path.exists() and temp_path.stat().st_size > 0:
-            # Add cleanup task to background tasks
-            background_tasks.add_task(lambda p=temp_path: p.unlink(missing_ok=True))
-
-            # Return the zip file as a download
-            return FileResponse(
-                path=str(temp_path),  # Convert Path to string explicitly
-                filename="processed.zip",
-                media_type="application/zip",
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create zip file")
-
-    except Exception as e:
-        logger.error(f"Error creating download: {str(e)}")
-        # Clean up the temp file if it exists
-        if "temp_path" in locals() and temp_path.exists():
-            temp_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=500, detail=f"Error creating download: {str(e)}"
-        )
-
-
 @app.get("/debug-paths/")
 async def debug_paths():
     """Debug endpoint to show directory paths"""
@@ -843,8 +881,8 @@ async def debug_paths():
         "files_in_input_dir": [
             f.name for f in settings.INPUT_DIR.glob("*") if f.is_file()
         ],
-        "pdf_files_in_input_dir": [
-            f.name for f in settings.INPUT_DIR.glob("*.[pP][dD][fF]")
+        "files_in_upload_dir": [
+            f.name for f in settings.UPLOAD_DIR.glob("*") if f.is_file()
         ],
     }
 
@@ -861,11 +899,12 @@ async def root():
     return {
         "message": "PDF Processing API",
         "endpoints": {
-            "POST /upload": "Upload and process a new PDF file",
-            "POST /process-file": "Process an existing file from the input directory",
-            "POST /process-all": "Process all files in /upload",
+            "POST /upload": "Upload a Zip file",
+            "POST /process": "Process a Zip file in /upload/",
+            "GET /download": "Download processed files as a zip file",
             "POST /cleanup": "Remove all files in /upload/, /processed/ and /filein/ directories. Subdirectories remain untouched.",
-            "GET /list-files": "List all PDF files in the input directory",
+            "GET /list-upload": "List all Zip files in the upload directory",
+            "GET /list-input": "List all PDF files in the input directory",
             "GET /debug-paths": "debug paths",
             "GET /processing-status": "List all",
             "GET /processing-status/{filename}": "List one",
