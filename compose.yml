@@ -4,7 +4,7 @@ services:
     volumes:
       - .:/pdf_proc
       - ./filein:/pdf_proc/filein
-      - ./uploads:/pdf_proc/uploads
+      - ./upload:/pdf_proc/upload
     ports:
       - "8000:8000"
     environment:

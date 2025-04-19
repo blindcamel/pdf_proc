@@ -845,7 +845,7 @@ async def list_input():
     """List all PDF files in the input directory"""
     try:
         files = [
-            f for f in os.listdir(settings.UPLOAD_DIR) if f.lower().endswith(".pdf")
+            f for f in os.listdir(settings.INPUT_DIR) if f.lower().endswith(".pdf")
         ]
         return {"files": files}
     except Exception as e:

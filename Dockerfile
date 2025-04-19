@@ -19,7 +19,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p filein uploads processed/OCR processed/failed processed/processed_originals temp_splits
+RUN mkdir -p filein upload processed/OCR processed/failed processed/processed_originals temp_splits
 
 # Expose the port
 EXPOSE 8000

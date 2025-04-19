@@ -1,161 +1,238 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Processor Frontend</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 2em; }
-        .container { max-width: 600px; margin: auto; }
-        h1 { text-align: center; }
-        form, .actions { margin-bottom: 2em; }
-        .output { background: #f7f7f7; padding: 1em; border-radius: 5px; min-height: 2em; }
-        button { margin-right: 1em; margin-bottom: 0.5em; }
-        .button-group { margin-bottom: 1em; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2em;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        form,
+        .actions {
+            margin-bottom: 2em;
+        }
+
+        .output {
+            background: #f7f7f7;
+            padding: 1em;
+            border-radius: 5px;
+            min-height: 2em;
+        }
+
+        button {
+            margin-right: 1em;
+            margin-bottom: 0.5em;
+        }
+
+        .button-group {
+            margin-bottom: 1em;
+        }
     </style>
 </head>
+
 <body>
-<div class="container">
-    <h1>PDF Processor</h1>
+    <div class="container">
+        <h1>PDF Processor</h1>
 
-    <!-- Upload Section -->
-    <div class="button-group">
-    <form id="uploadForm">
-        <label for="file">Upload ZIP file of PDFs:</label><br>
-        <input type="file" id="file" name="file" accept=".zip" required><br><br>
-        <button type="submit">Upload</button>
-    </form>
+        <!-- Upload Section -->
+        <div class="button-group">
+            <form id="uploadForm">
+                <label for="file">Upload ZIP file of PDFs:</label><br>
+                <input type="file" id="file" name="file" accept=".zip" required><br><br>
+                <button type="submit">Upload</button>
+            </form>
+        </div>
+
+        <!-- File Management Section -->
+        <div class="button-group">
+            <h3>File Management</h3>
+            <button onclick="listUploads()">List Uploaded ZIPs</button>
+            <button onclick="listInput()">List Input PDFs</button>
+            <button onclick="processAllFiles()">Process All Files</button>
+            <button onclick="cleanupFiles()">Cleanup Files</button>
+        </div>
+
+        <!-- Uploads File Picker Section -->
+        <div class="button-group">
+            <h3>Process Uploaded ZIP</h3>
+            <select id="uploadPicker">
+                <option value="">Select a ZIP file...</option>
+            </select>
+            <button onclick="processSelectedFile()">Process Selected File</button>
+        </div>
+
+        <!-- Processing Actions Section -->
+        <div class="button-group">
+            <h3>Process Actions</h3>
+            <button onclick="getStatus()">Get Processing Status</button>
+            <button onclick="downloadProcessed()">Download Processed Files</button>
+            <button onclick="clearStatus()">Clear All Processing Statuses</button>
+        </div>
+
+        <!-- Debugging Section -->
+        <div class="button-group">
+            <h3>Debugging</h3>
+            <button onclick="debugPaths()">Debug Paths</button>
+            <button onclick="healthCheck()">Health Check</button>
+            <button onclick="getApiInfo()">Get API Info</button>
+        </div>
+
+        <div class="output" id="output"></div>
     </div>
+    <script>
+        const output = document.getElementById('output');
 
-    <!-- File Management Section -->
-    <div class="button-group">
-        <h3>File Management</h3>
-        <button onclick="listUploads()">List Uploaded ZIPs</button>
-        <button onclick="listInput()">List Input PDFs</button>
-        <button onclick="processAllFiles()">Process All Files</button>
-        <button onclick="cleanupFiles()">Cleanup Files</button>
-</div>
+        document.getElementById('uploadForm').onsubmit = async function (e) {
+            e.preventDefault();
+            const fileInput = document.getElementById('file');
+            if (!fileInput.files.length) return;
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            output.textContent = 'Uploading...';
+            try {
+                const res = await fetch('/upload/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const text = await res.text();
+                output.textContent = text;
+            } catch (err) {
+                output.textContent = 'Upload failed.';
+            }
+        };
 
-    <!-- Processing Actions Section -->
-    <div class="button-group">
-        <h3>Process Actions</h3>
-        <button onclick="getStatus()">Get Processing Status</button>
-        <button onclick="downloadProcessed()">Download Processed Files</button>
-        <button onclick="clearStatus()">Clear All Processing Statuses</button>
-    </div>
+        // Function to populate the uploadPicker with available ZIP files
+        async function populateUploadPicker() {
+            output.textContent = 'Loading ZIP files...';
+            const res = await fetch('/list-upload');
+            const data = await res.json();
+            const select = document.getElementById('uploadPicker');
+            select.innerHTML = '<option value="">Select a ZIP file...</option>'; // reset
 
-    <!-- Debugging Section -->
-    <div class="button-group">
-        <h3>Debugging</h3>
-        <button onclick="debugPaths()">Debug Paths</button>
-        <button onclick="healthCheck()">Health Check</button>
-        <button onclick="getApiInfo()">Get API Info</button>
-    </div>
+            data.files.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file;
+                option.textContent = file;
+                select.appendChild(option);
+            });
+            output.textContent = '';
+        }
 
-    <div class="output" id="output"></div>
-</div>
-<script>
-const output = document.getElementById('output');
+        // Call to populate the upload picker on page load
+        populateUploadPicker();
 
-document.getElementById('uploadForm').onsubmit = async function(e) {
-    e.preventDefault();
-    const fileInput = document.getElementById('file');
-    if (!fileInput.files.length) return;
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    output.textContent = 'Uploading...';
-    try {
-        const res = await fetch('/upload/', {
-            method: 'POST',
-            body: formData
-        });
-        const text = await res.text();
-        output.textContent = text;
-    } catch (err) {
-        output.textContent = 'Upload failed.';
-    }
-};
+        // Function to process the selected file
+        async function processSelectedFile() {
+            const select = document.getElementById('uploadPicker');
+            const selectedFile = select.value;
+            if (!selectedFile) {
+                output.textContent = 'Please select a file to process.';
+                return;
+            }
+            output.textContent = 'Processing file ' + selectedFile + '...';
+            try {
+                const res = await fetch(`/process/${encodeURIComponent(selectedFile)}`, { method: 'POST' });
+                const data = await res.json();
+                output.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                output.textContent = 'Failed to process file.';
+            }
+        }
 
-async function listUploads() {
-    output.textContent = 'Fetching uploads...';
-    const res = await fetch('/list-upload');
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
+        async function listUploads() {
+            output.textContent = 'Fetching uploads...';
+            const res = await fetch('/list-upload');
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
 
-async function listInput() {
-    output.textContent = 'Fetching input PDFs...';
-    const res = await fetch('/list-input');
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
+        async function listInput() {
+            output.textContent = 'Fetching input PDFs...';
+            const res = await fetch('/list-input');
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
 
-async function getStatus() {
-    output.textContent = 'Fetching status...';
-    const res = await fetch('/processing-status/');
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
+        async function getStatus() {
+            output.textContent = 'Fetching status...';
+            const res = await fetch('/processing-status/');
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
 
-async function downloadProcessed() {
-    output.textContent = 'Downloading...';
-    const res = await fetch('/download');
-    if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'processed_files.zip';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        output.textContent = 'Download started.';
-    } else {
-        output.textContent = 'Download failed.';
-    }
-}
+        async function downloadProcessed() {
+            output.textContent = 'Downloading...';
+            const res = await fetch('/download');
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'processed_files.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                output.textContent = 'Download started.';
+            } else {
+                output.textContent = 'Download failed.';
+            }
+        }
 
-async function cleanupFiles() {
-    output.textContent = 'Cleaning up...';
-    const res = await fetch('/cleanup', { method: 'POST' });
-    const text = await res.text();
-    output.textContent = text;
-}
+        async function cleanupFiles() {
+            output.textContent = 'Cleaning up...';
+            const res = await fetch('/cleanup', { method: 'POST' });
+            const text = await res.text();
+            output.textContent = text;
+        }
 
-async function processAllFiles() {
-    output.textContent = 'Processing all files...';
-    const res = await fetch('/process-all/', { method: 'POST' });
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
+        async function processAllFiles() {
+            output.textContent = 'Processing all files...';
+            const res = await fetch('/process-all/', { method: 'POST' });
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
 
-async function clearStatus() {
-    output.textContent = 'Clearing status...';
-    const res = await fetch('/processing-status/', { method: 'DELETE' });
-    const text = await res.text();
-    output.textContent = text;
-}
+        async function clearStatus() {
+            output.textContent = 'Clearing status...';
+            const res = await fetch('/processing-status/', { method: 'DELETE' });
+            const text = await res.text();
+            output.textContent = text;
+        }
 
-async function debugPaths() {
-    output.textContent = 'Fetching paths...';
-    const res = await fetch('/debug-paths/');
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
+        async function debugPaths() {
+            output.textContent = 'Fetching paths...';
+            const res = await fetch('/debug-paths/');
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
 
-async function healthCheck() {
-    output.textContent = 'Checking health...';
-    const res = await fetch('/health');
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
+        async function healthCheck() {
+            output.textContent = 'Checking health...';
+            const res = await fetch('/health');
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
 
-async function getApiInfo() {
-    output.textContent = 'Fetching API info...';
-    const res = await fetch('/root');
-    const data = await res.json();
-    output.textContent = JSON.stringify(data, null, 2);
-}
-</script>
+        async function getApiInfo() {
+            output.textContent = 'Fetching API info...';
+            const res = await fetch('/root');
+            const data = await res.json();
+            output.textContent = JSON.stringify(data, null, 2);
+        }
+    </script>
 </body>
+
 </html>
