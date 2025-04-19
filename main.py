@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-import uuid
+# import uuid
 import shutil
 import tempfile
 import traceback
@@ -14,10 +14,11 @@ from pathlib import Path
 
 # Third-party imports
 import fitz  # PyMuPDF
-import numpy as np
+# import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -595,6 +596,14 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI application
 app = FastAPI(lifespan=lifespan)
 
+# Serve static files (frontend)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Serve index.html at root
+@app.get("/", include_in_schema=False)
+async def frontend():
+    return FileResponse("static/index.html")
+
 
 @app.post("/upload/")
 async def upload_pdf(file: UploadFile = File(...)):
@@ -893,7 +902,7 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.get("/")
+@app.get("/root")
 async def root():
     """Root endpoint providing API information"""
     return {
