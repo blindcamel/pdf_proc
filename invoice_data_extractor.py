@@ -102,7 +102,7 @@ class InvoiceDataExtractor:
                 
                 # Call the API
                 response = await self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model="gpt-4.1",
                     messages=messages,
                     max_tokens=1000
                 )
