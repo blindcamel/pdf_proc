@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import base64
+import tempfile
 from typing import List, Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
@@ -19,14 +20,18 @@ class InvoiceDataExtractor:
         # Load environment variables from .env file
         load_dotenv()
 
-        # Get API key with priority: 
+        # Get API key with priority:
         # 1. Explicitly passed api_key parameter
         # 2. Fly.io secrets or other secret stores via _get_secret()
         # 3. Environment variable OPENAI_API_KEY
         api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
-        
+
         # Get Assistant ID from environment or parameter
-        assistant_id = assistant_id or os.getenv("OPENAI_ASSISTANT_ID") or os.getenv("FLY_OPENAI_ASSISTANT_ID")
+        assistant_id = (
+            assistant_id
+            or os.getenv("OPENAI_ASSISTANT_ID")
+            or os.getenv("FLY_OPENAI_ASSISTANT_ID")
+        )
 
         if not api_key:
             logger.warning("OpenAI API key not found. Some features may not work.")
@@ -49,17 +54,35 @@ class InvoiceDataExtractor:
             if fly_api_key:
                 logger.info("Using API key from Fly.io secrets")
                 return fly_api_key
-                
+
             # If not running in Fly.io environment, check for other potential sources
             # This is a placeholder for any other secret management you might implement
             logger.info("No Fly.io secrets found, checking alternative sources")
-            
+
             # For now, return None and let the calling code fall back to environment variables
             return None
 
         except Exception as e:
             logger.error(f"Unexpected error retrieving secret: {str(e)}")
             return None
+
+    async def _upload_file(self, file_content):
+        """Upload a file to OpenAI and return the file ID"""
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(file_content)
+            temp_path = temp_file.name
+
+        try:
+            # Upload the file
+            with open(temp_path, "rb") as file:
+                response = await self.client.files.create(
+                    file=file, purpose="assistants"
+                )
+                return response.id
+        finally:
+            # Clean up the temporary file
+            os.unlink(temp_path)
 
     async def extract_data(self, file_path_or_text):
         """
@@ -72,53 +95,45 @@ class InvoiceDataExtractor:
             is_file_path = not isinstance(file_path_or_text, str) or (
                 isinstance(file_path_or_text, str) and os.path.exists(file_path_or_text)
             )
-            
+
             if is_file_path:
                 # Handle PDF file
                 file_path = file_path_or_text
-                
+
                 with open(file_path, "rb") as file:
                     file_content = file.read()
-                
-                # Base64 encode the file content
-                base64_pdf = base64.b64encode(file_content).decode("utf-8")
-                
+
+                # Upload the file and get file_id
+                file_id = await self._upload_file(file_content)
+
                 # Create the message with PDF attachment
                 messages = [
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Extract invoice data from this PDF according to the standard format."},
                             {
-                                "type": "file_attachment",
-                                "file_attachment": {
-                                    "type": "application/pdf",
-                                    "data": base64_pdf
-                                }
-                            }
-                        ]
+                                "type": "text",
+                                "text": "Extract invoice data from this PDF according to the standard format.",
+                            },
+                            {"type": "file", "file": file_id},
+                        ],
                     }
                 ]
-                
+
                 # Call the API
                 response = await self.client.chat.completions.create(
-                    model="gpt-4.1",
-                    messages=messages,
-                    max_tokens=1000
+                    model="gpt-4o", messages=messages, max_tokens=1000
                 )
-                
+
                 response_text = response.choices[0].message.content
                 sent_content = f"PDF file: {file_path}"
-                
-                full_response = {
-                    "status": "success",
-                    "response_text": response_text
-                }
-                
+
+                full_response = {"status": "success", "response_text": response_text}
+
             else:
                 # Handle text content (maintaining backward compatibility)
                 text = file_path_or_text
-                
+
                 # Create and run a new thread with the assistant
                 thread_run = await self.client.beta.threads.create_and_run(
                     assistant_id=self.assistant_id,
@@ -145,7 +160,7 @@ class InvoiceDataExtractor:
                 )
                 response_text = messages.data[0].content[0].text.value.strip()
                 sent_content = text
-                
+
                 # Store the full response object for debugging
                 full_response = {
                     "thread_id": thread_run.thread_id,
@@ -175,9 +190,13 @@ class InvoiceDataExtractor:
                 data_obj = ast.literal_eval(cleaned_result)
 
                 # Format should be a list containing a dictionary
-                if isinstance(data_obj, list) and len(data_obj) > 0 and isinstance(data_obj[0], dict):
+                if (
+                    isinstance(data_obj, list)
+                    and len(data_obj) > 0
+                    and isinstance(data_obj[0], dict)
+                ):
                     dict_obj = data_obj[0]  # Extract the dictionary from the list
-                    
+
                     # Validate structure - dictionary should have tuple keys and list values
                     if not all(
                         isinstance(k, tuple) and len(k) == 2 for k in dict_obj.keys()
@@ -209,13 +228,15 @@ class InvoiceDataExtractor:
                         "status": "parse_error",
                         "error": str(e),
                         "response": response_text,
-                    }
+                    },
                 )
 
         except Exception as e:
             logger.error(f"API extraction error: {str(e)}")
             return (
                 None,
-                file_path_or_text if isinstance(file_path_or_text, str) else str(file_path_or_text),
+                file_path_or_text
+                if isinstance(file_path_or_text, str)
+                else str(file_path_or_text),
                 {"status": "api_error", "error": str(e), "response": None},
             )

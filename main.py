@@ -183,23 +183,26 @@ class PDFHandler(FileSystemEventHandler):
                 logger.info(f"Created new status entry for {filename} as PROCESSING")
 
             # Process the PDF
-            result = await process_pdf(file_path)
-            logger.info(f"PDF processing result for {filename}: {result['source']}")
+
 
             # Extract and rename if data available
             renamed = False
             new_filename = filename
 
-            if result.get("text"):
-                # Store extracted text in status
-                self.processing_status[filename]["extracted_text"] = result["text"]
+            # Call extract_data directly with file path
+            (
+                extracted_data,
+                sent_text,
+                api_response,
+            ) = await self.invoice_extractor.extract_data(file_path)
 
-                # Call extract_data and unpack the returned tuple
-                (
-                    extracted_data,
-                    sent_text,
-                    api_response,
-                ) = await self.invoice_extractor.extract_data(result["text"])
+            # Store API request and response data
+            self.processing_status[filename].update(
+                {"api_request_text": sent_text, "api_response": api_response}
+            )
+
+            if extracted_data:
+                logger.info(f"Extracted data from {filename}: {extracted_data}")
 
                 # Store API request and response data
                 self.processing_status[filename].update(
@@ -287,7 +290,7 @@ class PDFHandler(FileSystemEventHandler):
             self.processing_status[status_key].update(
                 {
                     "status": ProcessingStatus.COMPLETED,
-                    "result": result,
+                    "result": api_response,
                     "completed_at": datetime.now(),
                 }
             )
