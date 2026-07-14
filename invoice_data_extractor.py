@@ -115,14 +115,16 @@ class InvoiceDataExtractor:
                                 "type": "text",
                                 "text": "Extract invoice data from this PDF according to the standard format.",
                             },
-                            {"type": "file", "file": file_id},
+                            # Fix: Wrap the file_id inside a dictionary
+                            {"type": "file", "file": {"file_id": file_id}},
                         ],
                     }
                 ]
 
                 # Call the API
+                # Fix: Update to the newest model
                 response = await self.client.chat.completions.create(
-                    model="gpt-4o", messages=messages, max_tokens=1000
+                    model="gpt-5.4-mini", messages=messages, max_tokens=1000
                 )
 
                 response_text = response.choices[0].message.content
