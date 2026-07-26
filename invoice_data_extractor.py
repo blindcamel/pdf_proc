@@ -47,7 +47,7 @@ class InvoiceDataExtractor:
             self.assistant_id = None
 
         # Load system prompt from file
-        prompt_path = Path(__file__).parent / "PDFProc_Prompt_011526.txt"
+        prompt_path = Path(__file__).parent / "PDFProc_Prompt.txt"
         try:
             self.system_prompt = prompt_path.read_text(encoding="utf-8")
             logger.info(f"Loaded system prompt from {prompt_path}")
