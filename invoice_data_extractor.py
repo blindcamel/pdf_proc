@@ -2,9 +2,9 @@ import ast
 import logging
 import os
 import re
-import base64
 import tempfile
-from typing import List, Optional
+from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
@@ -46,6 +46,15 @@ class InvoiceDataExtractor:
             self.client = None
             self.assistant_id = None
 
+        # Load system prompt from file
+        prompt_path = Path(__file__).parent / "PDFProc_Prompt_011526.txt"
+        try:
+            self.system_prompt = prompt_path.read_text(encoding="utf-8")
+            logger.info(f"Loaded system prompt from {prompt_path}")
+        except FileNotFoundError:
+            self.system_prompt = "You are an invoice parser. Extract structured data from invoice documents."
+            logger.warning(f"System prompt file not found at {prompt_path}, using default")
+
     def _get_secret(self):
         """Retrieve API key from environment variables (including Fly.io secrets)"""
         try:
@@ -77,7 +86,7 @@ class InvoiceDataExtractor:
             # Upload the file
             with open(temp_path, "rb") as file:
                 response = await self.client.files.create(
-                    file=file, purpose="assistants"
+                    file=file, purpose="user_data"
                 )
                 return response.id
         finally:
@@ -108,21 +117,17 @@ class InvoiceDataExtractor:
 
                 # Create the message with PDF attachment
                 messages = [
+                    {"role": "system", "content": self.system_prompt},
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": "Extract invoice data from this PDF according to the standard format.",
-                            },
-                            # Fix: Wrap the file_id inside a dictionary
+                            {"type": "text", "text": "Extract invoice data from this PDF."},
                             {"type": "file", "file": {"file_id": file_id}},
                         ],
-                    }
+                    },
                 ]
 
                 # Call the API
-                # Fix: Update to the newest model
                 response = await self.client.chat.completions.create(
                     model="gpt-5.4-mini", messages=messages, max_completion_tokens=1000
                 )
