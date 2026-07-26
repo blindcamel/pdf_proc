@@ -124,7 +124,7 @@ class InvoiceDataExtractor:
                 # Call the API
                 # Fix: Update to the newest model
                 response = await self.client.chat.completions.create(
-                    model="gpt-5.4-mini", messages=messages, max_tokens=1000
+                    model="gpt-5.4-mini", messages=messages, max_completion_tokens=1000
                 )
 
                 response_text = response.choices[0].message.content
