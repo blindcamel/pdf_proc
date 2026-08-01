@@ -47,6 +47,12 @@ INVOICE_JSON_SCHEMA = {
 class InvoiceDataExtractor:
     """Handles extraction of invoice data using OpenAI's Responses API"""
 
+    # Cumulative token counters across all PDFs processed in this session
+    _session_input_tokens: int = 0
+    _session_cached_tokens: int = 0
+    _session_output_tokens: int = 0
+    _session_pdf_count: int = 0
+
     def __init__(self, api_key: Optional[str] = None):
         # Load environment variables from .env file
         load_dotenv()
@@ -170,6 +176,38 @@ class InvoiceDataExtractor:
             )
 
             response_text = response.output_text
+
+            # Log per-request token usage and accumulate session totals
+            usage = response.usage
+            if usage:
+                input_tok   = getattr(usage, "input_tokens", 0) or 0
+                output_tok  = getattr(usage, "output_tokens", 0) or 0
+                # cached_tokens lives inside input_tokens_details on the Responses API
+                details     = getattr(usage, "input_tokens_details", None)
+                cached_tok  = getattr(details, "cached_tokens", 0) or 0
+
+                InvoiceDataExtractor._session_pdf_count    += 1
+                InvoiceDataExtractor._session_input_tokens  += input_tok
+                InvoiceDataExtractor._session_cached_tokens += cached_tok
+                InvoiceDataExtractor._session_output_tokens += output_tok
+
+                logger.info(
+                    f"[Token usage] {file_path.name if hasattr(file_path, 'name') else file_path} | "
+                    f"input={input_tok}  cached={cached_tok}  output={output_tok}  "
+                    f"(cache hit rate this call: "
+                    f"{cached_tok/input_tok*100:.0f}%)" if input_tok else "(no input tokens reported)"
+                )
+                logger.info(
+                    f"[Session totals — {InvoiceDataExtractor._session_pdf_count} PDFs] "
+                    f"input={InvoiceDataExtractor._session_input_tokens}  "
+                    f"cached={InvoiceDataExtractor._session_cached_tokens}  "
+                    f"output={InvoiceDataExtractor._session_output_tokens}  "
+                    f"overall cache rate="
+                    f"{InvoiceDataExtractor._session_cached_tokens/InvoiceDataExtractor._session_input_tokens*100:.0f}%"
+                    if InvoiceDataExtractor._session_input_tokens else
+                    f"[Session totals — {InvoiceDataExtractor._session_pdf_count} PDFs] no token data yet"
+                )
+
             full_response = {"status": "success", "response_text": response_text}
 
             # Parse and validate the JSON response
