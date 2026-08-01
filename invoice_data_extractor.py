@@ -12,11 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class InvoiceDataExtractor:
-    """Handles extraction of invoice data using OpenAI Assistant API"""
+    """Handles extraction of invoice data using OpenAI's Responses API"""
 
-    def __init__(
-        self, api_key: Optional[str] = None, assistant_id: Optional[str] = None
-    ):
+    def __init__(self, api_key: Optional[str] = None):
         # Load environment variables from .env file
         load_dotenv()
 
@@ -26,25 +24,14 @@ class InvoiceDataExtractor:
         # 3. Environment variable OPENAI_API_KEY
         api_key = api_key or self._get_secret() or os.getenv("OPENAI_API_KEY")
 
-        # Get Assistant ID from environment or parameter
-        assistant_id = (
-            assistant_id
-            or os.getenv("OPENAI_ASSISTANT_ID")
-            or os.getenv("FLY_OPENAI_ASSISTANT_ID")
-        )
-
         if not api_key:
             logger.warning("OpenAI API key not found. Some features may not work.")
-        if not assistant_id:
-            logger.warning("OpenAI Assistant ID not found. Some features may not work.")
 
         # Initialize the async OpenAI client if credentials are available
         if api_key:
             self.client = AsyncOpenAI(api_key=api_key)
-            self.assistant_id = assistant_id
         else:
             self.client = None
-            self.assistant_id = None
 
         # Load system prompt from file
         prompt_path = Path(__file__).parent / "PDFProc_Prompt.txt"
@@ -93,99 +80,45 @@ class InvoiceDataExtractor:
             # Clean up the temporary file
             os.unlink(temp_path)
 
-    async def extract_data(self, file_path_or_text):
+    async def extract_data(self, file_path):
         """
-        Extract invoice data from a PDF file or text using OpenAI API.
-        Accepts either a file path to a PDF or text content.
+        Extract invoice data from a PDF file using OpenAI's Responses API.
+        Accepts a file path to a PDF.
         Returns: Tuple of (extracted_data, sent_content, api_response)
         """
         try:
-            # Determine if input is a file path or text
-            is_file_path = not isinstance(file_path_or_text, str) or (
-                isinstance(file_path_or_text, str) and os.path.exists(file_path_or_text)
+            with open(file_path, "rb") as file:
+                file_content = file.read()
+
+            # Upload the file and get file_id
+            file_id = await self._upload_file(file_content)
+
+            # Create the input with PDF attachment
+            input_messages = [
+                {"role": "system", "content": self.system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "Extract invoice data from this PDF."},
+                        {"type": "input_file", "file_id": file_id},
+                    ],
+                },
+            ]
+
+            # Call the Responses API
+            # temperature=0 to minimize randomness/"creativity" - we want
+            # consistent, deterministic extraction of structured data.
+            response = await self.client.responses.create(
+                model="gpt-4o",
+                input=input_messages,
+                max_output_tokens=1000,
+                temperature=0,
             )
 
-            if is_file_path:
-                # Handle PDF file
-                file_path = file_path_or_text
+            response_text = response.output_text
+            sent_content = f"PDF file: {file_path}"
 
-                with open(file_path, "rb") as file:
-                    file_content = file.read()
-
-                # Upload the file and get file_id
-                file_id = await self._upload_file(file_content)
-
-                # Create the message with PDF attachment
-                messages = [
-                    {"role": "system", "content": self.system_prompt},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Extract invoice data from this PDF."},
-                            {"type": "file", "file": {"file_id": file_id}},
-                        ],
-                    },
-                ]
-
-                # Call the API
-                response = await self.client.chat.completions.create(
-                    # model="gpt-5.4-mini", messages=messages, max_completion_tokens=1000
-                    model="gpt-4o", messages=messages, max_completion_tokens=1000
-                )
-
-                response_text = response.choices[0].message.content
-                sent_content = f"PDF file: {file_path}"
-
-                full_response = {"status": "success", "response_text": response_text}
-
-            else:
-                # Handle text content (maintaining backward compatibility)
-                text = file_path_or_text
-
-                # Create and run a new thread with the assistant
-                thread_run = await self.client.beta.threads.create_and_run(
-                    assistant_id=self.assistant_id,
-                    thread={"messages": [{"role": "user", "content": text}]},
-                )
-
-                # Wait for the assistant's response
-                run = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_run.thread_id, run_id=thread_run.id
-                )
-
-                while run.status not in ["completed", "failed"]:
-                    run = await self.client.beta.threads.runs.retrieve(
-                        thread_id=thread_run.thread_id, run_id=thread_run.id
-                    )
-
-                if run.status == "failed":
-                    logger.error("Assistant processing failed.")
-                    return None, text, {"status": "failed", "response": None}
-
-                # Fetch messages from the thread
-                messages = await self.client.beta.threads.messages.list(
-                    thread_id=thread_run.thread_id
-                )
-                response_text = messages.data[0].content[0].text.value.strip()
-                sent_content = text
-
-                # Store the full response object for debugging
-                full_response = {
-                    "thread_id": thread_run.thread_id,
-                    "run_id": thread_run.id,
-                    "status": run.status,
-                    "response_text": response_text,
-                    "messages": [
-                        {
-                            "role": msg.role,
-                            "content": [
-                                c.text.value if hasattr(c, "text") else str(c)
-                                for c in msg.content
-                            ],
-                        }
-                        for msg in messages.data
-                    ],
-                }
+            full_response = {"status": "success", "response_text": response_text}
 
             # Validate and parse response
             try:
@@ -243,8 +176,6 @@ class InvoiceDataExtractor:
             logger.error(f"API extraction error: {str(e)}")
             return (
                 None,
-                file_path_or_text
-                if isinstance(file_path_or_text, str)
-                else str(file_path_or_text),
+                str(file_path),
                 {"status": "api_error", "error": str(e), "response": None},
             )
