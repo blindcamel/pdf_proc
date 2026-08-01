@@ -1,7 +1,6 @@
-import ast
+import json
 import logging
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -9,6 +8,40 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
+
+# JSON schema for structured output from the Responses API
+INVOICE_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "documents": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "document_id": {"type": "integer"},
+                    "pages": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "page_number":    {"type": "integer"},
+                                "company":        {"type": "string"},
+                                "purchase_order": {"type": "string"},
+                                "invoice_number": {"type": "string"},
+                            },
+                            "required": ["page_number", "company", "purchase_order", "invoice_number"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["document_id", "pages"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["documents"],
+    "additionalProperties": False,
+}
 
 
 class InvoiceDataExtractor:
@@ -52,7 +85,6 @@ class InvoiceDataExtractor:
                 return fly_api_key
 
             # If not running in Fly.io environment, check for other potential sources
-            # This is a placeholder for any other secret management you might implement
             logger.info("No Fly.io secrets found, checking alternative sources")
 
             # For now, return None and let the calling code fall back to environment variables
@@ -85,6 +117,10 @@ class InvoiceDataExtractor:
         Extract invoice data from a PDF file using OpenAI's Responses API.
         Accepts a file path to a PDF.
         Returns: Tuple of (extracted_data, sent_content, api_response)
+
+        extracted_data is a dict with (document_id, page_number) tuple keys
+        and [company, purchase_order, invoice_number] list values — same
+        shape as before so main.py and pdf_renamer.py need no changes.
         """
         try:
             with open(file_path, "rb") as file:
@@ -93,74 +129,81 @@ class InvoiceDataExtractor:
             # Upload the file and get file_id
             file_id = await self._upload_file(file_content)
 
-            # Create the input with PDF attachment
-            input_messages = [
-                {"role": "system", "content": self.system_prompt},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": "Extract invoice data from this PDF."},
-                        {"type": "input_file", "file_id": file_id},
-                    ],
-                },
-            ]
+            sent_content = f"PDF file: {file_path}"
 
-            # Call the Responses API
-            # temperature=0 to minimize randomness/"creativity" - we want
-            # consistent, deterministic extraction of structured data.
+            # Call the Responses API.
+            # - instructions= is the preferred way to pass a system prompt in
+            #   the Responses API; it is weighted more heavily than a system
+            #   role message embedded in the input array.
+            # - text.format json_schema enforces the exact JSON shape we need,
+            #   making "return the whole PDF" failures structurally impossible.
+            # - gpt-4.1-mini does not support the temperature parameter;
+            #   structured output (json_schema + strict) provides the
+            #   determinism we need instead.
             response = await self.client.responses.create(
-                model="gpt-4o",
-                input=input_messages,
-                max_output_tokens=1000,
-                temperature=0,
+                model="gpt-4.1-mini",
+                instructions=self.system_prompt,
+                input=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_text",
+                                "text": "Extract invoice data from this PDF.",
+                            },
+                            {
+                                "type": "input_file",
+                                "file_id": file_id,
+                            },
+                        ],
+                    }
+                ],
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "invoice_extraction",
+                        "schema": INVOICE_JSON_SCHEMA,
+                        "strict": True,
+                    }
+                },
+                max_output_tokens=2000,
             )
 
             response_text = response.output_text
-            sent_content = f"PDF file: {file_path}"
-
             full_response = {"status": "success", "response_text": response_text}
 
-            # Validate and parse response
+            # Parse and validate the JSON response
             try:
-                # Remove unnecessary formatting if present
-                cleaned_result = re.sub(
-                    r"^```(?:json|python)?\n|\n```$", "", response_text.strip()
-                )
+                data_obj = json.loads(response_text)
 
-                # Safely evaluate the string as a Python object
-                data_obj = ast.literal_eval(cleaned_result)
+                documents = data_obj.get("documents", [])
+                if not isinstance(documents, list) or len(documents) == 0:
+                    raise ValueError("Response contained no documents")
 
-                # Format should be a list containing a dictionary
-                if (
-                    isinstance(data_obj, list)
-                    and len(data_obj) > 0
-                    and isinstance(data_obj[0], dict)
-                ):
-                    dict_obj = data_obj[0]  # Extract the dictionary from the list
+                # Rebuild the tuple-keyed dict that the rest of the app expects:
+                # { (document_id, page_number): [company, purchase_order, invoice_number] }
+                dict_obj = {}
+                for doc in documents:
+                    doc_id = doc["document_id"]
+                    for page in doc["pages"]:
+                        key = (doc_id, page["page_number"])
+                        dict_obj[key] = [
+                            page["company"],
+                            page["purchase_order"],
+                            page["invoice_number"],
+                        ]
 
-                    # Validate structure - dictionary should have tuple keys and list values
-                    if not all(
-                        isinstance(k, tuple) and len(k) == 2 for k in dict_obj.keys()
-                    ):
-                        raise ValueError(
-                            "Invalid key format: Expected (document_id, page_number) tuples"
-                        )
+                # Basic sanity checks
+                if not all(isinstance(k, tuple) and len(k) == 2 for k in dict_obj.keys()):
+                    raise ValueError("Invalid key format after JSON→tuple conversion")
 
-                    if not all(
-                        isinstance(v, list) and len(v) == 3 for v in dict_obj.values()
-                    ):
-                        raise ValueError(
-                            "Invalid value format: Expected [CompanyName, PO#, Invoice#] lists"
-                        )
+                if not all(isinstance(v, list) and len(v) == 3 for v in dict_obj.values()):
+                    raise ValueError("Invalid value format after JSON→list conversion")
 
-                    return dict_obj, sent_content, full_response
+                return dict_obj, sent_content, full_response
 
-                raise ValueError(
-                    "Invalid response format: Expected a list containing a dictionary with tuple keys."
-                )
-
-            except (SyntaxError, ValueError) as e:
-                logger.error(f"Failed to parse assistant response: {cleaned_result}")
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                logger.error(f"Failed to parse API response: {response_text}")
                 logger.error(f"Parsing error: {str(e)}")
                 return (
                     None,
