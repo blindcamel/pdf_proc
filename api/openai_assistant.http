@@ -7,12 +7,12 @@ Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0g
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
 Content-Disposition: form-data; name="purpose"
 
-assistants
+user_data
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
-Content-Disposition: form-data; name="file"; filename="shortnames.py"
-Content-Type: text/plain
+Content-Disposition: form-data; name="file"; filename="invoice.pdf"
+Content-Type: application/pdf
 
-./shortnames.py
+./invoice.pdf
 ------WebKitFormBoundary7MA4YWxkTrZu0gW--
 
 ### List files
@@ -27,15 +27,5 @@ Authorization: Bearer {{$dotenv OPENAI_API_KEY}}
 
 ### Delete file
 # @name deleteFile
-DELETE https://api.openai.com/v1/files/file-GPddo2kxzPavQYfN4bqToE
+DELETE https://api.openai.com/v1/files/{fileId}
 Authorization: Bearer {{$dotenv OPENAI_API_KEY}}
-
-### Attach file to asst.
-POST https://api.openai.com/v1/assistants/{{$dotenv OPENAI_ASSISTANT_ID}}/files
-Authorization: Bearer {{$dotenv OPENAI_API_KEY}}
-OpenAI-Beta: assistants=v2
-Content-Type: application/json
-
-{
-    "file_id": "file-GPddo2kxzPavQYfN4bqToE"
-}
