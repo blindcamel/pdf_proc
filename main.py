@@ -101,6 +101,17 @@ class PDFHandler(FileSystemEventHandler):
             return
 
         file_path = Path(event.src_path)
+
+        # Normalize extension to lowercase (.PDF -> .pdf)
+        if file_path.suffix != file_path.suffix.lower():
+            normalized_path = file_path.with_suffix(file_path.suffix.lower())
+            try:
+                file_path.rename(normalized_path)
+                logger.info(f"Normalized filename extension: {file_path.name} -> {normalized_path.name}")
+                file_path = normalized_path
+            except Exception as e:
+                logger.warning(f"Could not normalize extension for {file_path.name}: {e}")
+
         filename = file_path.name
 
         # Only add to queue if not already being processed
@@ -693,10 +704,10 @@ async def download_processed_files(background_tasks: BackgroundTasks):
 
         # Create a zip file containing processed PDFs
         with zipfile.ZipFile(temp_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # Add all PDF files from the processed directory
+            # Add all PDF files from the processed directory (case-insensitive match)
             files_added = 0
-            for pdf_file in settings.PROCESSED_DIR.glob("*.pdf"):
-                if pdf_file.exists():
+            for pdf_file in settings.PROCESSED_DIR.iterdir():
+                if pdf_file.is_file() and pdf_file.suffix.lower() == ".pdf":
                     zipf.write(pdf_file, arcname=pdf_file.name)
                     files_added += 1
 
@@ -867,6 +878,16 @@ async def process_all_files():
 
     # Queue all files for processing
     for file_path in input_files:
+        # Normalize extension to lowercase (.PDF -> .pdf)
+        if file_path.suffix != file_path.suffix.lower():
+            normalized_path = file_path.with_suffix(file_path.suffix.lower())
+            try:
+                file_path.rename(normalized_path)
+                logger.info(f"Normalized filename extension: {file_path.name} -> {normalized_path.name}")
+                file_path = normalized_path
+            except Exception as e:
+                logger.warning(f"Could not normalize extension for {file_path.name}: {e}")
+
         if file_path.name not in event_handler.processing_status:
             event_handler.processing_status[file_path.name] = {
                 "status": ProcessingStatus.DETECTED,
