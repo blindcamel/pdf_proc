@@ -206,11 +206,8 @@ Example output for a 2-page PDF containing two separate invoices (one page each)
   ]
 }
 
-
 RULES:
 - Output ONLY the JSON object. No explanations, no markdown code fences, no extra text.
 - The number of unique invoice numbers must equal the number of document objects.
 - Every page in the PDF must appear in exactly one document's pages array.
 - If a field cannot be found on a page, use an empty string "" for that field.
-- Strictly extract the number found labeled explicitly as 'INVOICE #'. Do not use numbers labeled 'ORIGINAL ORDER', 'ORDER NUMBER', or 'JOB#'.
-- Do not group pages into the same document object just because they share a Purchase Order (PO) number or reference a previous order. Pages must only share a document_id if their primary 'INVOICE #' is identical.
