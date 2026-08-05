@@ -147,7 +147,7 @@ class InvoiceDataExtractor:
             #   structured output (json_schema + strict) provides the
             #   determinism we need instead.
             response = await self.client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-5.4-mini",
                 instructions=self.system_prompt,
                 input=[
                     {
