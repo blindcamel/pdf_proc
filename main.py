@@ -13,7 +13,7 @@ from enum import Enum
 from pathlib import Path
 
 # Third-party imports
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 # import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
@@ -215,84 +215,76 @@ class PDFHandler(FileSystemEventHandler):
             if extracted_data:
                 logger.info(f"Extracted data from {filename}: {extracted_data}")
 
-                # Store API request and response data
-                self.processing_status[filename].update(
-                    {"api_request_text": sent_text, "api_response": api_response}
-                )
+                # Check if the PDF contains multiple documents
+                doc_ids = set(key[0] for key in extracted_data.keys())
+                if len(doc_ids) > 1:
+                    logger.info(
+                        f"Multiple documents detected in {filename}, initiating document splitting"
+                    )
+                    self.processing_status[filename].update(
+                        {"multiple_documents": True}
+                    )
 
-                if extracted_data:
-                    logger.info(f"Extracted data from {filename}: {extracted_data}")
+                    # Split the document based on extracted data
+                    split_paths = await self.pdf_splitter.split_document(
+                        file_path, extracted_data
+                    )
 
-                    # Check if the PDF contains multiple documents
-                    doc_ids = set(key[0] for key in extracted_data.keys())
-                    if len(doc_ids) > 1:
+                    if split_paths:
                         logger.info(
-                            f"Multiple documents detected in {filename}, initiating document splitting"
+                            f"Successfully split {filename} into {len(split_paths)} documents"
                         )
                         self.processing_status[filename].update(
-                            {"multiple_documents": True}
+                            {
+                                "split": True,
+                                "split_count": len(split_paths),
+                                "split_paths": [str(p) for p in split_paths],
+                            }
                         )
-
-                        # Split the document based on extracted data
-                        split_paths = await self.pdf_splitter.split_document(
-                            file_path, extracted_data
-                        )
-
-                        if split_paths:
-                            logger.info(
-                                f"Successfully split {filename} into {len(split_paths)} documents"
-                            )
-                            self.processing_status[filename].update(
-                                {
-                                    "split": True,
-                                    "split_count": len(split_paths),
-                                    "split_paths": [str(p) for p in split_paths],
-                                }
-                            )
-                    else:
-                        # Handle single document case
-                        # Get the value from the first page
-                        first_page_key = min(extracted_data.keys(), key=lambda k: k[1])
-                        representative_value = extracted_data[first_page_key]
-
-                        # Rename file using the representative value
-                        new_path = await self.pdf_renamer.rename_file(
-                            file_path, representative_value
-                        )
-
-                        if new_path:
-                            # Update the file path and filename after renaming
-                            renamed = True
-                            file_path = new_path
-                            new_filename = new_path.name
-
-                            # Create an entry for the new filename if it doesn't exist
-                            if new_filename not in self.processing_status:
-                                self.processing_status[new_filename] = (
-                                    self.processing_status[filename].copy()
-                                )
-
-                            # Update the entry with extraction and rename info
-                            self.processing_status[new_filename].update(
-                                {
-                                    "extracted_data": extracted_data,
-                                    "renamed": True,
-                                    "original_filename": original_filename,
-                                    "original_path": str(original_path),
-                                    "path": str(file_path),
-                                }
-                            )
-                            logger.info(
-                                f"Renamed file from {filename} to {new_filename}"
-                            )
-                        else:
-                            logger.warning(f"Failed to rename {filename}")
-                            self.processing_status[filename].update(
-                                {"rename_failed": True}
-                            )
                 else:
-                    logger.warning(f"Failed to extract data from {filename}")
-                    self.processing_status[filename].update({"extraction_failed": True})
+                    # Handle single document case
+                    # Get the value from the first page
+                    first_page_key = min(extracted_data.keys(), key=lambda k: k[1])
+                    representative_value = extracted_data[first_page_key]
+
+                    # Rename file using the representative value
+                    new_path = await self.pdf_renamer.rename_file(
+                        file_path, representative_value
+                    )
+
+                    if new_path:
+                        # Update the file path and filename after renaming
+                        renamed = True
+                        file_path = new_path
+                        new_filename = new_path.name
+
+                        # Create an entry for the new filename if it doesn't exist
+                        if new_filename not in self.processing_status:
+                            self.processing_status[new_filename] = (
+                                self.processing_status[filename].copy()
+                            )
+
+                        # Update the entry with extraction and rename info
+                        self.processing_status[new_filename].update(
+                            {
+                                "extracted_data": extracted_data,
+                                "renamed": True,
+                                "original_filename": original_filename,
+                                "original_path": str(original_path),
+                                "path": str(file_path),
+                            }
+                        )
+                        logger.info(
+                            f"Renamed file from {filename} to {new_filename}"
+                        )
+                    else:
+                        logger.warning(f"Failed to rename {filename}")
+                        self.processing_status[filename].update(
+                            {"rename_failed": True}
+                        )
+            else:
+                logger.warning(f"Failed to extract data from {filename}")
+                self.processing_status[filename].update({"extraction_failed": True})
 
             # Determine which status entry to update
             status_key = new_filename if renamed else filename
