@@ -9,37 +9,29 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-# JSON schema for structured output from the Responses API
+# JSON schema for structured output from the Responses API.
+# Flat list of invoices — one object per invoice/page — so the model has no
+# structural incentive to collapse multiple invoices under a single document.
 INVOICE_JSON_SCHEMA = {
     "type": "object",
     "properties": {
-        "documents": {
+        "invoices": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
-                    "document_id": {"type": "integer"},
-                    "pages": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "page_number":    {"type": "integer"},
-                                "company":        {"type": "string"},
-                                "purchase_order": {"type": "string"},
-                                "invoice_number": {"type": "string"},
-                            },
-                            "required": ["page_number", "company", "purchase_order", "invoice_number"],
-                            "additionalProperties": False,
-                        },
-                    },
+                    "document_id":    {"type": "integer"},
+                    "page_number":    {"type": "integer"},
+                    "company":        {"type": "string"},
+                    "purchase_order": {"type": "string"},
+                    "invoice_number": {"type": "string"},
                 },
-                "required": ["document_id", "pages"],
+                "required": ["document_id", "page_number", "company", "purchase_order", "invoice_number"],
                 "additionalProperties": False,
             },
         }
     },
-    "required": ["documents"],
+    "required": ["invoices"],
     "additionalProperties": False,
 }
 
@@ -147,7 +139,7 @@ class InvoiceDataExtractor:
             #   structured output (json_schema + strict) provides the
             #   determinism we need instead.
             response = await self.client.responses.create(
-                model="gpt-4.1-mini",
+                model="gpt-5.4-mini",
                 instructions=self.system_prompt,
                 input=[
                     {
@@ -214,22 +206,20 @@ class InvoiceDataExtractor:
             try:
                 data_obj = json.loads(response_text)
 
-                documents = data_obj.get("documents", [])
-                if not isinstance(documents, list) or len(documents) == 0:
-                    raise ValueError("Response contained no documents")
+                invoices = data_obj.get("invoices", [])
+                if not isinstance(invoices, list) or len(invoices) == 0:
+                    raise ValueError("Response contained no invoices")
 
                 # Rebuild the tuple-keyed dict that the rest of the app expects:
                 # { (document_id, page_number): [company, purchase_order, invoice_number] }
                 dict_obj = {}
-                for doc in documents:
-                    doc_id = doc["document_id"]
-                    for page in doc["pages"]:
-                        key = (doc_id, page["page_number"])
-                        dict_obj[key] = [
-                            page["company"],
-                            page["purchase_order"],
-                            page["invoice_number"],
-                        ]
+                for inv in invoices:
+                    key = (inv["document_id"], inv["page_number"])
+                    dict_obj[key] = [
+                        inv["company"],
+                        inv["purchase_order"],
+                        inv["invoice_number"],
+                    ]
 
                 # Basic sanity checks
                 if not all(isinstance(k, tuple) and len(k) == 2 for k in dict_obj.keys()):
