@@ -18,7 +18,8 @@ testpdfs*
 testfiles
 *.pdf
 *.PDF
-Claude.md
+# .claude/skills/ is intentionally tracked (CLAUDE.md, SKILL.md travel with the repo)
+# .claude/settings.local.json would be gitignored if it existed
 shortnames.json
 json/
 upload/*
